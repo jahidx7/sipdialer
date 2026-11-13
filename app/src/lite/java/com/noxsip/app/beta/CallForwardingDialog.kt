@@ -131,9 +131,9 @@ fun CallForwardingDialog(onDismiss: () -> Unit) {
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     // ---------- SIM ----------
-                    Text("SIM calls", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Text("SIM calls (Experimental)", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                     Text(
-                        "Done by your operator. Your operator may charge for forwarded calls.",
+                        "Experimental: depends on your operator and SIM. Done by your operator. Your operator may charge for forwarded calls.",
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -191,9 +191,9 @@ fun CallForwardingDialog(onDismiss: () -> Unit) {
                     Spacer(Modifier.height(4.dp))
 
                     // ---------- SIP ----------
-                    Text("SIP calls", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Text("SIP calls (Experimental)", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                     Text(
-                        "Done by this app. Works only while the app is running and registered.",
+                        "Experimental: may not work on every SIP server. Done by this app. Works only while the app is running and registered.",
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -247,7 +247,8 @@ fun CallForwardingDialog(onDismiss: () -> Unit) {
                         textAlign = TextAlign.Start,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Spacer(Modifier.height(24.dp))
+                    // নিচে নেভিগেশন বারের নিচে ঢাকা না পড়তে বাড়তি ফাঁকা (কিছু ফোনে ডায়ালগে insets আসে না)
+                    Spacer(Modifier.height(96.dp))
                 }
             }
         }

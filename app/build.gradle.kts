@@ -41,6 +41,14 @@ android {
         }
     }
 
+    // Update feed URL comes from the git-ignored local.properties (key: updateUrl), so a private server
+    // address never lands in the public source. Empty = update check disabled.
+    val localProps = Properties().apply {
+        val f = rootProject.file("local.properties")
+        if (f.exists()) f.inputStream().use { load(it) }
+    }
+    val updateUrl = localProps.getProperty("updateUrl", "").trim()
+
     // Lite: Beta-র কপি থেকে আলাদা প্রজেক্ট। GitHub বা VPS-এ যায় না, হাতে ইনস্টল।
     //  com.noxsip.app.lite, SMS ও সেলফ-আপডেট ছাড়া, VERSION_URL ফাঁকা (আপডেট চেক বন্ধ)
     flavorDimensions += "edition"
@@ -50,7 +58,7 @@ android {
             applicationIdSuffix = ".lite"
             versionCode = 1
             versionName = "1.0.0-lite1"
-            buildConfigField("String", "VERSION_URL", "\"\"")
+            buildConfigField("String", "VERSION_URL", "\"$updateUrl\"")
         }
     }
 

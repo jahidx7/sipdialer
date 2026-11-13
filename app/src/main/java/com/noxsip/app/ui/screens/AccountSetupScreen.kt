@@ -1,6 +1,7 @@
 package com.noxsip.app.ui.screens
 
 import android.content.Intent
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -78,10 +79,28 @@ fun AccountSetupScreen(
     }
     val isDefaultDialer by TelecomHelper.defaultDialerHeld.collectAsState()
     LaunchedEffect(Unit) { TelecomHelper.refreshDefaultDialer(context) }
+    // "Don't show again" চাপা থাকলে সিস্টেম রোল-ডায়ালগ না দেখিয়ে সাথে সাথে ফিরে আসে; তখন ফোনের "Default apps" পেজ খুলি
+    var dialerLaunchAt by remember { mutableLongStateOf(0L) }
     val dialerRoleLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
     ) {
-        TelecomHelper.refreshDefaultDialer(context)
+        val held = TelecomHelper.refreshDefaultDialer(context)
+        val quick = System.currentTimeMillis() - dialerLaunchAt < 800L
+        if (!held && quick) {
+            Toast.makeText(
+                context,
+                "Choose \"Phone app\" and select this app",
+                Toast.LENGTH_LONG
+            ).show()
+            try {
+                context.startActivity(Intent(android.provider.Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS))
+            } catch (_: Exception) {
+                try {
+                    context.startActivity(Intent(android.provider.Settings.ACTION_SETTINGS))
+                } catch (_: Exception) {
+                }
+            }
+        }
     }
     var hasOverlay by remember {
         mutableStateOf(TelecomHelper.hasOverlayPermission(context))
@@ -450,10 +469,11 @@ fun AccountSetupScreen(
                     title = "Default Dialer (Beta)",
                     statusText = if (isDefaultDialer) "Enabled ✓" else "Tap to make default phone app",
                     isEnabled = isDefaultDialer,
-                    accentColor = Green500,
+                    accentColor = Amber500, // ডিফল্ট না থাকলে সবুজ নয় (কমলা); ডিফল্ট হলে টাইল নিজে সবুজ ✓ হয়
                     onClick = {
                         val dialerIntent = TelecomHelper.createDefaultDialerRoleIntent(context)
                         if (dialerIntent != null) {
+                            dialerLaunchAt = System.currentTimeMillis()
                             dialerRoleLauncher.launch(dialerIntent)
                         }
                     }
@@ -465,7 +485,7 @@ fun AccountSetupScreen(
                     modifier = Modifier.fillMaxWidth(),
                     icon = Icons.Filled.Call,
                     title = "Call Forwarding (Beta)",
-                    statusText = if (com.noxsip.app.beta.CallForward.mode(context) != com.noxsip.app.beta.CallForward.OFF) "SIP forwarding on" else "SIM and SIP",
+                    statusText = if (com.noxsip.app.beta.CallForward.mode(context) != com.noxsip.app.beta.CallForward.OFF) "SIP forwarding on (Experimental)" else "SIM and SIP (SIP is Experimental)",
                     isEnabled = com.noxsip.app.beta.CallForward.mode(context) != com.noxsip.app.beta.CallForward.OFF,
                     accentColor = Indigo600,
                     onClick = { showForwarding = true }

@@ -54,6 +54,22 @@ import com.noxsip.app.ui.theme.Green500
 import com.noxsip.app.ui.theme.Indigo600
 import com.noxsip.app.util.DeviceContact
 
+/** পেস্ট করা নম্বরের বাংলা (০-৯), আরবি-ভারতীয় ইত্যাদি যেকোনো ইউনিকোড অঙ্ক ইংরেজি 0-9 করে; শুধু অঙ্ক + * # রাখে */
+internal fun normalizeDialInput(raw: String): String {
+    val sb = StringBuilder()
+    for (ch in raw) {
+        when {
+            ch == '+' || ch == '*' || ch == '#' -> sb.append(ch)
+            ch in '0'..'9' -> sb.append(ch)
+            Character.isDigit(ch) -> {
+                val v = Character.digit(ch, 10)
+                if (v in 0..9) sb.append(('0' + v))
+            }
+        }
+    }
+    return sb.toString()
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun DialerScreen(
@@ -218,7 +234,7 @@ fun DialerScreen(
     var numberMenu by remember { mutableStateOf(false) }
     val pasteFromClipboard = {
         val clip = clipboardManager.getText()?.text?.trim()
-        val cleaned = clip?.filter { it.isDigit() || it == '+' || it == '*' || it == '#' }
+        val cleaned = clip?.let { normalizeDialInput(it) }
         if (!cleaned.isNullOrEmpty()) {
             phoneNumber = cleaned
             showKeypad = true
@@ -386,7 +402,7 @@ fun DialerScreen(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = {
                         val clip = clipboardManager.getText()?.text?.trim()
-                        val cleaned = clip?.filter { it.isDigit() || it == '+' || it == '*' || it == '#' }
+                        val cleaned = clip?.let { normalizeDialInput(it) }
                         if (!cleaned.isNullOrEmpty()) {
                             phoneNumber = cleaned
                             showKeypad = true
