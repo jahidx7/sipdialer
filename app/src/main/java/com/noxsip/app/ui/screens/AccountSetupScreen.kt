@@ -384,49 +384,6 @@ fun AccountSetupScreen(
                             )
                         }
                     }
-
-                    Surface(
-                        shape = RoundedCornerShape(20.dp),
-                        color = Violet500.copy(alpha = 0.14f),
-                        border = BorderStroke(1.dp, Violet500.copy(alpha = 0.4f)),
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(20.dp))
-                            .clickable {
-                                if (NativeDialerOverlay.canShowOverlay(context)) {
-                                    NativeDialerOverlay.showAccountChooser(
-                                        context = context,
-                                        number = "",
-                                        onSimSelected = {},
-                                        onSipSelected = {},
-                                        onCancel = {}
-                                    )
-                                } else {
-                                    val intent = Intent(context, CallChoiceActivity::class.java).apply {
-                                        putExtra("phone_number", "")
-                                    }
-                                    context.startActivity(intent)
-                                }
-                            }
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            Icon(
-                                Icons.Filled.PlayArrow,
-                                contentDescription = null,
-                                tint = Violet500,
-                                modifier = Modifier.size(14.dp)
-                            )
-                            Text(
-                                text = "Test Popup",
-                                color = Violet500,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
                 }
 
                 // 2 Side-by-Side Colorful Permission Tiles
@@ -463,21 +420,73 @@ fun AccountSetupScreen(
                 }
 
                 // Beta: ফোনের ডিফল্ট ডায়ালার হওয়া (SIM কল এই অ্যাপের কল স্ক্রিনে আসবে)
-                CompactPermissionTile(
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    icon = Icons.Filled.Call,
-                    title = "Default Dialer (Beta)",
-                    statusText = if (isDefaultDialer) "Enabled ✓" else "Tap to make default phone app",
-                    isEnabled = isDefaultDialer,
-                    accentColor = Amber500, // ডিফল্ট না থাকলে সবুজ নয় (কমলা); ডিফল্ট হলে টাইল নিজে সবুজ ✓ হয়
-                    onClick = {
-                        val dialerIntent = TelecomHelper.createDefaultDialerRoleIntent(context)
-                        if (dialerIntent != null) {
-                            dialerLaunchAt = System.currentTimeMillis()
-                            dialerRoleLauncher.launch(dialerIntent)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    CompactPermissionTile(
+                        modifier = Modifier.weight(1f),
+                        icon = Icons.Filled.Call,
+                        title = "Default Dialer (Beta)",
+                        statusText = if (isDefaultDialer) "Enabled ✓" else "Tap to make default phone app",
+                        isEnabled = isDefaultDialer,
+                        accentColor = Amber500, // ডিফল্ট না থাকলে সবুজ নয় (কমলা); ডিফল্ট হলে টাইল নিজে সবুজ ✓ হয়
+                        onClick = {
+                            val dialerIntent = TelecomHelper.createDefaultDialerRoleIntent(context)
+                            if (dialerIntent != null) {
+                                dialerLaunchAt = System.currentTimeMillis()
+                                dialerRoleLauncher.launch(dialerIntent)
+                            }
                         }
-                    }
-                )
+                    )
+
+                        Surface(
+                            shape = RoundedCornerShape(20.dp),
+                            color = Violet500.copy(alpha = 0.14f),
+                            border = BorderStroke(1.dp, Violet500.copy(alpha = 0.4f)),
+                            modifier = Modifier
+                                .wrapContentWidth()
+                                .clip(RoundedCornerShape(20.dp))
+                                .clickable {
+                                    if (NativeDialerOverlay.canShowOverlay(context)) {
+                                        NativeDialerOverlay.showAccountChooser(
+                                            context = context,
+                                            number = "",
+                                            onSimSelected = {},
+                                            onSipSelected = {},
+                                            onCancel = {}
+                                        )
+                                    } else {
+                                        val intent = Intent(context, CallChoiceActivity::class.java).apply {
+                                            putExtra("phone_number", "")
+                                        }
+                                        context.startActivity(intent)
+                                    }
+                                }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(
+                                    Icons.Filled.PlayArrow,
+                                    contentDescription = null,
+                                    tint = Violet500,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Text(
+                                    text = "Test Popup",
+                                    color = Violet500,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    softWrap = false
+                                )
+                            }
+                        }
+                }
 
                 // Beta: কল ফরোয়ার্ডিং (SIM + SIP)
                 var showForwarding by remember { mutableStateOf(false) }
