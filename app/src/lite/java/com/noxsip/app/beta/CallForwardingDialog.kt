@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -80,6 +81,11 @@ fun CallForwardingDialog(onDismiss: () -> Unit) {
         DialCodes.handle(ctx, code, handle) { message = it }
     }
 
+    // SIP নম্বর বা ধরন বদলালেই সেভ (চালু থাকলে নতুন মান সাথে সাথে কাজে লাগে)
+    fun persistSip(type: Int = sipType, number: String = sipNumber) {
+        CallForward.save(ctx, if (sipOn) type else CallForward.OFF, number, CallForward.seconds(ctx))
+    }
+
     fun saveAndClose() {
         CallForward.save(ctx, if (sipOn) sipType else CallForward.OFF, sipNumber, CallForward.seconds(ctx))
         onDismiss()
@@ -95,6 +101,7 @@ fun CallForwardingDialog(onDismiss: () -> Unit) {
                     .fillMaxSize()
                     .statusBarsPadding()
                     .navigationBarsPadding()
+                    .imePadding() // কীবোর্ড উঠলে পেজ উপরে সরে, নম্বরের ঘর ঢাকে না
             ) {
                 // শিরোনাম বার
                 Row(
@@ -194,13 +201,13 @@ fun CallForwardingDialog(onDismiss: () -> Unit) {
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        FilterChip(selected = sipType == CallForward.ALL, onClick = { sipType = CallForward.ALL }, label = { Text("All calls") })
-                        FilterChip(selected = sipType == CallForward.BUSY, onClick = { sipType = CallForward.BUSY }, label = { Text("When busy") })
-                        FilterChip(selected = sipType == CallForward.NO_ANSWER, onClick = { sipType = CallForward.NO_ANSWER }, label = { Text("No answer (20 s)") })
+                        FilterChip(selected = sipType == CallForward.ALL, onClick = { sipType = CallForward.ALL; persistSip(type = sipType) }, label = { Text("All calls") })
+                        FilterChip(selected = sipType == CallForward.BUSY, onClick = { sipType = CallForward.BUSY; persistSip(type = sipType) }, label = { Text("When busy") })
+                        FilterChip(selected = sipType == CallForward.NO_ANSWER, onClick = { sipType = CallForward.NO_ANSWER; persistSip(type = sipType) }, label = { Text("No answer (20 s)") })
                     }
                     OutlinedTextField(
                         value = sipNumber,
-                        onValueChange = { sipNumber = clean(it) },
+                        onValueChange = { sipNumber = clean(it); persistSip(number = sipNumber) },
                         label = { Text("Forward to number") },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
@@ -240,6 +247,7 @@ fun CallForwardingDialog(onDismiss: () -> Unit) {
                         textAlign = TextAlign.Start,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    Spacer(Modifier.height(24.dp))
                 }
             }
         }
