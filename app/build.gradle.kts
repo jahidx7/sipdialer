@@ -54,6 +54,12 @@ android {
         }
     }
 
+    // Optional private build extras: if app/src/private/kotlin exists (git-ignored) it is compiled in,
+    // otherwise the public no-op stub in app/src/publicstub/kotlin is used.
+    sourceSets.getByName("main").java.srcDir(
+        if (file("src/private/kotlin").exists()) "src/private/kotlin" else "src/publicstub/kotlin"
+    )
+
     buildTypes {
         release {
             if (keystorePropsFile.exists()) {

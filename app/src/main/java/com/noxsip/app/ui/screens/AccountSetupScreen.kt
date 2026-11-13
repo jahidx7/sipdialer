@@ -224,7 +224,8 @@ fun AccountSetupScreen(
             SettingsRow(Icons.Filled.Block, "Blocked numbers", "Calls from these numbers are rejected", Color(0xFFDC2626)) { settingsTab = 5 }
             SettingsRow(Icons.Filled.ManageAccounts, "User Account", backupSubtitle, Color(0xFFDB2777)) { settingsTab = 3 }
             SettingsRow(Icons.Filled.SystemUpdate, "App Update", "Check for a new version", Color(0xFF0EA5E9)) { settingsTab = 6 }
-            Spacer(modifier = Modifier.height(16.dp))
+            // নিচের ঐচ্ছিক ফ্লোটিং উইজেট (SupportSlot) যেন শেষ সারির উপর না পড়ে
+            Spacer(modifier = Modifier.height(72.dp))
         } else {
             val pageTitle = when (settingsTab) {
                 0 -> "SIP Account"
@@ -1239,6 +1240,7 @@ fun AccountSetupScreen(
         }
 
     }
+        SupportSlot(settingsTab == -1)
     }
 }
 
