@@ -145,7 +145,8 @@ class SipCallRedirectionService : CallRedirectionService() {
                                 } catch (_: Exception) {
                                 }
                             }
-                        }
+                        },
+                        lockedHandle = initialPhoneAccount
                     )
                 } else {
                     // Fallback if Overlay permission hasn't been enabled yet

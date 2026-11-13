@@ -150,6 +150,112 @@ class SipEngine(private val context: Context) {
     /** নির্বাচিত অ্যাকাউন্ট: আউটগোয়িং কল এটা দিয়েই যায় */
     private var currentAccount: SipAccountData? = null
 
+    // ---- বেটা: SIP কল ফরোয়ার্ড (সার্ভার redirect না মানায় অ্যাপ নিজে কল ধরে আরেক লেগ করে জুড়ে দেয়) ----
+    private val bridgeCalls = HashSet<Call>()
+    private var bridgeIn: Call? = null
+    private var bridgeOut: Call? = null
+    private var bridgeTarget: String? = null
+    private var bridgeDialing = false
+    private var bridgeJoined = false
+    private val bridgeTimeout = Runnable { if (!bridgeJoined) endBridge() }
+
+    private fun endBridge() {
+        mainHandler.removeCallbacks(bridgeTimeout)
+        val a = bridgeIn
+        val b = bridgeOut
+        bridgeIn = null
+        bridgeOut = null
+        bridgeTarget = null
+        bridgeJoined = false
+        try { if (core.isInConference) core.terminateConference() } catch (_: Exception) {}
+        try { a?.terminate() } catch (_: Exception) {}
+        try { b?.terminate() } catch (_: Exception) {}
+        if (core.callsNb <= 1) {
+            CallNetworkLock.release()
+            SipForegroundService.setCallActive(context, false)
+        }
+    }
+
+    private fun startBridge(call: Call, number: String) {
+        if (bridgeIn != null) {
+            try { call.decline(Reason.Busy) } catch (_: Exception) {}
+            return
+        }
+        try {
+            CallRinger.stop()
+            try { core.stopRinging() } catch (_: Exception) {}
+            NotificationHelper.cancelIncomingCallNotification(context)
+            NativeDialerOverlay.dismissIncomingIfVisible()
+            _callState.value = SipCallState.Idle
+            val acc = currentAccount?.let { core.getAccountByIdkey(it.id) }
+            val domain = acc?.params?.identityAddress?.domain ?: call.toAddress?.domain
+            val decoded = number.removePrefix("sip:").removePrefix("tel:").replace(" ", "").replace("-", "").trim()
+            bridgeTarget = if (decoded.contains("@")) "sip:$decoded" else "sip:$decoded@$domain"
+            bridgeIn = call
+            bridgeJoined = false
+            bridgeCalls.add(call)
+            CallNetworkLock.acquire(context)
+            SipForegroundService.setCallActive(context, true)
+            Log.i(TAG, "Bridge forward: answering incoming leg")
+            call.accept()
+            mainHandler.postDelayed(bridgeTimeout, 45_000L)
+        } catch (e: Exception) {
+            Log.w(TAG, "Bridge start failed", e)
+            endBridge()
+        }
+    }
+
+    private fun dialBridgeTarget() {
+        val target = bridgeTarget ?: return
+        bridgeTarget = null
+        try {
+            val addr = Factory.instance().createAddress(target)
+            if (addr == null) { endBridge(); return }
+            val params = core.createCallParams(null)
+            params?.mediaEncryption = MediaEncryption.None
+            val acc = currentAccount?.let { core.getAccountByIdkey(it.id) }
+            if (acc != null) params?.account = acc
+            params?.isVideoEnabled = false
+            bridgeDialing = true
+            val out = core.inviteAddressWithParams(addr, params!!)
+            bridgeDialing = false
+            if (out == null) { endBridge(); return }
+            bridgeOut = out
+            bridgeCalls.add(out)
+            Log.i(TAG, "Bridge forward: dialing forward number")
+        } catch (e: Exception) {
+            bridgeDialing = false
+            Log.w(TAG, "Bridge dial failed", e)
+            endBridge()
+        }
+    }
+
+    private fun handleBridgeState(call: Call, state: Call.State) {
+        when (state) {
+            Call.State.StreamsRunning -> {
+                if (call == bridgeIn && bridgeOut == null && bridgeTarget != null) {
+                    dialBridgeTarget()
+                } else if (call == bridgeOut && !bridgeJoined && bridgeIn != null) {
+                    try {
+                        core.addAllToConference()
+                        core.leaveConference() // আমি বেরিয়ে যাই; দুই পক্ষ নিজেরা কথা বলে
+                        bridgeJoined = true
+                        mainHandler.removeCallbacks(bridgeTimeout)
+                        Log.i(TAG, "Bridge forward: both legs joined")
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Bridge join failed", e)
+                        endBridge()
+                    }
+                }
+            }
+            Call.State.End, Call.State.Error, Call.State.Released -> {
+                if (call == bridgeIn || call == bridgeOut) endBridge()
+                bridgeCalls.remove(call)
+            }
+            else -> {}
+        }
+    }
+
     // ---- প্রতি অ্যাকাউন্টের রেজিস্ট্রেশন তথ্য (সব অ্যাকাউন্ট একসাথে রেজিস্টার থাকে) ----
     private val registeredData = HashMap<String, SipAccountData>()
     private val authInfos = HashMap<String, MutableList<AuthInfo>>()
@@ -504,22 +610,10 @@ class SipEngine(private val context: Context) {
             }
         }
 
-        /** বেটা: ইনকামিং SIP কল অন্য নম্বরে redirect (302)। ব্যর্থ হলে ডিক্লাইন */
+        /** বেটা: ইনকামিং SIP কল অন্য নম্বরে ঘুরিয়ে দেওয়া (কল ধরে আরেক লেগ করে জুড়ে দেওয়া) */
         private fun forwardSipCall(call: Call, number: String) {
-            try {
-                val domain = call.toAddress?.domain
-                val target = if (number.contains("@")) "sip:$number" else "sip:$number@$domain"
-                Log.i(TAG, "Forwarding incoming call")
-                val targetAddr = Factory.instance().createAddress(target)
-                if (targetAddr == null) {
-                    call.decline(Reason.Declined)
-                } else {
-                    call.redirectTo(targetAddr)
-                }
-            } catch (e: Exception) {
-                Log.w(TAG, "forward failed", e)
-                try { call.decline(Reason.Declined) } catch (_: Exception) {}
-            }
+            Log.i(TAG, "Forwarding incoming call")
+            startBridge(call, number)
         }
 
         override fun onCallStateChanged(
@@ -530,6 +624,13 @@ class SipEngine(private val context: Context) {
         ) {
             Log.d(TAG, "Call state: $state - $message")
             val remoteAddress = call.remoteAddress.asStringUriOnly()
+
+            // বেটা: ফরোয়ার্ডের দুই লেগ UI/ইতিহাসে আসে না
+            if (bridgeDialing && state == Call.State.OutgoingInit) bridgeCalls.add(call)
+            if (bridgeCalls.contains(call)) {
+                handleBridgeState(call, state)
+                return
+            }
 
             when (state) {
                 Call.State.IncomingReceived -> {

@@ -63,7 +63,11 @@ fun CallForwardingDialog(onDismiss: () -> Unit) {
     var message by remember { mutableStateOf<String?>(null) }
 
     // SIP
-    var sipMode by remember { mutableIntStateOf(CallForward.mode(ctx)) }
+    // sipType: কোন ধরনের ফরোয়ার্ড (All/Busy/No answer); sipOn: এখন চালু কি না (Turn on / Turn off দিয়ে বদলায়)
+    var sipType by remember {
+        mutableIntStateOf(CallForward.mode(ctx).let { if (it == CallForward.OFF) CallForward.ALL else it })
+    }
+    var sipOn by remember { mutableStateOf(CallForward.mode(ctx) != CallForward.OFF) }
     var sipNumber by remember { mutableStateOf(CallForward.number(ctx)) }
 
     val codes = listOf("21", "67", "61", "62")
@@ -77,10 +81,7 @@ fun CallForwardingDialog(onDismiss: () -> Unit) {
     }
 
     fun saveAndClose() {
-        CallForward.save(ctx, sipMode, sipNumber, CallForward.seconds(ctx))
-        if (sipMode != CallForward.OFF && clean(sipNumber).isBlank()) {
-            Toast.makeText(ctx, "SIP forwarding needs a number", Toast.LENGTH_SHORT).show()
-        }
+        CallForward.save(ctx, if (sipOn) sipType else CallForward.OFF, sipNumber, CallForward.seconds(ctx))
         onDismiss()
     }
 
@@ -193,10 +194,9 @@ fun CallForwardingDialog(onDismiss: () -> Unit) {
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        FilterChip(selected = sipMode == CallForward.OFF, onClick = { sipMode = CallForward.OFF }, label = { Text("Off") })
-                        FilterChip(selected = sipMode == CallForward.ALL, onClick = { sipMode = CallForward.ALL }, label = { Text("All") })
-                        FilterChip(selected = sipMode == CallForward.BUSY, onClick = { sipMode = CallForward.BUSY }, label = { Text("Busy") })
-                        FilterChip(selected = sipMode == CallForward.NO_ANSWER, onClick = { sipMode = CallForward.NO_ANSWER }, label = { Text("No answer (20 s)") })
+                        FilterChip(selected = sipType == CallForward.ALL, onClick = { sipType = CallForward.ALL }, label = { Text("All calls") })
+                        FilterChip(selected = sipType == CallForward.BUSY, onClick = { sipType = CallForward.BUSY }, label = { Text("When busy") })
+                        FilterChip(selected = sipType == CallForward.NO_ANSWER, onClick = { sipType = CallForward.NO_ANSWER }, label = { Text("No answer (20 s)") })
                     }
                     OutlinedTextField(
                         value = sipNumber,
@@ -206,8 +206,36 @@ fun CallForwardingDialog(onDismiss: () -> Unit) {
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
                         modifier = Modifier.fillMaxWidth()
                     )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        OutlinedButton(
+                            modifier = Modifier.weight(1f),
+                            onClick = {
+                                if (clean(sipNumber).isBlank()) {
+                                    Toast.makeText(ctx, "Enter a number", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    sipOn = true
+                                    CallForward.save(ctx, sipType, sipNumber, CallForward.seconds(ctx))
+                                    Toast.makeText(ctx, "SIP forwarding is on", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        ) { Text("Turn on", maxLines = 1, softWrap = false) }
+                        OutlinedButton(
+                            modifier = Modifier.weight(1f),
+                            onClick = {
+                                sipOn = false
+                                CallForward.save(ctx, CallForward.OFF, sipNumber, CallForward.seconds(ctx))
+                                Toast.makeText(ctx, "SIP forwarding is off", Toast.LENGTH_SHORT).show()
+                            }
+                        ) { Text("Turn off", maxLines = 1, softWrap = false) }
+                    }
                     Text(
-                        "Changes are saved when you leave this page.",
+                        if (sipOn) "SIP forwarding is ON" else "SIP forwarding is OFF",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (sipOn) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        "Works while the app is running and registered.",
                         fontSize = 12.sp,
                         textAlign = TextAlign.Start,
                         color = MaterialTheme.colorScheme.onSurfaceVariant

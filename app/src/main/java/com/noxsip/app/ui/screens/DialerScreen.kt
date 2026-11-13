@@ -116,6 +116,7 @@ fun DialerScreen(
     val ctx = androidx.compose.ui.platform.LocalContext.current
     val sims = remember { com.noxsip.app.telecom.TelecomHelper.getAvailableSimAccounts(ctx) }
     var dialCodeMsg by remember { mutableStateOf<String?>(null) }
+    var showCallChooser by remember { mutableStateOf(false) }
     val placeSimCall = { slot: Int ->
         if (phoneNumber.isNotBlank()) {
             if (!com.noxsip.app.beta.DialCodes.handle(ctx, phoneNumber, sims.getOrNull(slot)?.handle) { dialCodeMsg = it }) {
@@ -140,6 +141,79 @@ fun DialerScreen(
             },
             text = { Text(msg) }
         )
+    }
+    if (showCallChooser) {
+        // ফোনের ডায়ালার থেকে আসা পপ-আপের (NativeDialerOverlay) হুবহু একই চেহারা ও জায়গা: নিচে সাদা কার্ড
+        androidx.compose.ui.window.Dialog(
+            onDismissRequest = { showCallChooser = false },
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .navigationBarsPadding()
+                    .clickable(
+                        interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                        indication = null
+                    ) { showCallChooser = false },
+                contentAlignment = Alignment.BottomCenter
+            ) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 16.dp, end = 16.dp, top = 28.dp, bottom = 56.dp)
+                        .clickable(
+                            interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                            indication = null
+                        ) {},
+                    shape = RoundedCornerShape(22.dp),
+                    color = Color.White,
+                    shadowElevation = 8.dp,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0))
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text("Select Calling Account", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1E293B))
+                        Spacer(Modifier.height(12.dp))
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            val simLabels = if (sims.size > 1) listOf("SIM 1", "SIM 2") else listOf("SIM 1")
+                            simLabels.forEachIndexed { idx, label ->
+                                Box(
+                                    modifier = Modifier.weight(1f).height(42.dp).clip(RoundedCornerShape(24.dp))
+                                        .background(if (idx == 0) Color(0xFF2E8B6E) else Color(0xFF3E7FA6))
+                                        .clickable { showCallChooser = false; placeSimCall(idx) },
+                                    contentAlignment = Alignment.Center
+                                ) { Text(label, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1) }
+                            }
+                            Box(
+                                modifier = Modifier.weight(1f).height(42.dp).clip(RoundedCornerShape(24.dp))
+                                    .background(Color(0xFF3B6998))
+                                    .clickable {
+                                        showCallChooser = false
+                                        if (phoneNumber.isNotBlank()) {
+                                            if (isRegistered) {
+                                                onCall(phoneNumber)
+                                                phoneNumber = ""
+                                            } else {
+                                                onOpenSettings?.invoke()
+                                            }
+                                        }
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) { Text("SIP", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1) }
+                        }
+                        Spacer(Modifier.height(10.dp))
+                        Box(
+                            modifier = Modifier.fillMaxWidth().height(42.dp).clip(RoundedCornerShape(24.dp))
+                                .background(Color(0xFFF1F5F9)).clickable { showCallChooser = false },
+                            contentAlignment = Alignment.Center
+                        ) { Text("Cancel", color = Color(0xFF475569), fontSize = 14.sp, fontWeight = FontWeight.Bold) }
+                    }
+                }
+            }
+        }
     }
     var numberMenu by remember { mutableStateOf(false) }
     val pasteFromClipboard = {
@@ -731,54 +805,51 @@ fun DialerScreen(
                 )
             }
 
-            // একটাই পিল: SIM1 | SIM2 | SIP (দ্বিতীয় SIM না থাকলে SIM2 লুকায়)
-            val callSegments = buildList<Pair<String, () -> Unit>> {
-                add("SIM 1" to { placeSimCall(0) })
-                if (sims.size > 1) add("SIM 2" to { placeSimCall(1) })
-                add("SIP" to {
-                    if (phoneNumber.isNotBlank()) {
-                        if (isEmergencyNumber(phoneNumber) || com.noxsip.app.beta.DialCodes.isCode(phoneNumber)) {
-                            placeSimCall(-1)
-                        } else if (isRegistered) {
-                            onCall(phoneNumber)
-                            phoneNumber = ""
-                        } else {
-                            onOpenSettings?.invoke()
-                        }
-                    }
-                })
-            }
-            Row(
+            // একটাই গোল কল বোতাম: ট্যাপে SIM 1 / SIM 2 / SIP বাছাইয়ের পপ-আপ
+            Box(
                 modifier = Modifier
-                    .weight(1f, fill = false)
-                    .padding(horizontal = 6.dp)
-                    .height(40.dp)
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(Green500),
-                verticalAlignment = Alignment.CenterVertically
+                    .size(56.dp)
+                    .clip(CircleShape)
+                    .background(Green500)
+                    .clickable {
+                        if (phoneNumber.isNotBlank()) {
+                            if (com.noxsip.app.beta.DialCodes.isCode(phoneNumber) || isEmergencyNumber(phoneNumber)) {
+                                placeSimCall(-1)
+                            } else {
+                                // ফোনের ডায়ালার থেকে আসা পপ-আপেরই হুবহু একই সিস্টেম ওভারলে (ওভারলে অনুমতি থাকলে)
+                                if (com.noxsip.app.telecom.NativeDialerOverlay.canShowOverlay(ctx)) {
+                                    val dialed = phoneNumber
+                                    com.noxsip.app.telecom.NativeDialerOverlay.showAccountChooser(
+                                        context = ctx,
+                                        number = dialed,
+                                        onSimSelected = { h ->
+                                            com.noxsip.app.telecom.TelecomHelper.placeSimCallWithHandle(ctx, dialed, h)
+                                            phoneNumber = ""
+                                        },
+                                        onSipSelected = {
+                                            if (isRegistered) {
+                                                onCall(dialed)
+                                                phoneNumber = ""
+                                            } else {
+                                                onOpenSettings?.invoke()
+                                            }
+                                        },
+                                        onCancel = {}
+                                    )
+                                } else {
+                                    showCallChooser = true
+                                }
+                            }
+                        }
+                    },
+                contentAlignment = Alignment.Center
             ) {
-                callSegments.forEachIndexed { idx, (label, action) ->
-                    if (idx > 0) {
-                        Box(modifier = Modifier.width(1.dp).fillMaxHeight().background(Color.White.copy(alpha = 0.7f)))
-                    }
-                    Row(
-                        // তিন অংশের একই চওড়া মাপ (SIM 1 / SIM 2 / SIP সমান), ছোট স্ক্রিনেও ভাঙে না
-                        modifier = Modifier
-                            .width(70.dp)
-                            .fillMaxHeight()
-                            .clickable { action() },
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(3.dp, Alignment.CenterHorizontally)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.Call,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Text(label, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 1, softWrap = false)
-                    }
-                }
+                Icon(
+                    imageVector = Icons.Filled.Call,
+                    contentDescription = "Call",
+                    tint = Color.White,
+                    modifier = Modifier.size(26.dp)
+                )
             }
 
             run {

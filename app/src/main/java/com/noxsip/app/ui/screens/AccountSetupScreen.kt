@@ -415,7 +415,21 @@ fun AccountSetupScreen(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    // Beta: "Call Redirect" টাইল সরানো (বেটায় রিডিরেকশন সার্ভিস নেই)
+                    CompactPermissionTile(
+                        modifier = Modifier.weight(1f),
+                        icon = Icons.AutoMirrored.Filled.PhoneForwarded,
+                        title = "Call Redirect",
+                        statusText = if (isCallRedirectionHeld) "Enabled ✓" else "Tap to Enable",
+                        isEnabled = isCallRedirectionHeld,
+                        accentColor = Indigo600,
+                        onClick = {
+                            val roleIntent = TelecomHelper.createCallRedirectionRoleIntent(context)
+                            if (roleIntent != null) {
+                                roleLauncher.launch(roleIntent)
+                            }
+                        }
+                    )
+
                     CompactPermissionTile(
                         modifier = Modifier.weight(1f),
                         icon = Icons.Filled.Layers,

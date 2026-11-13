@@ -63,7 +63,9 @@ object NativeDialerOverlay {
         number: String,
         onSimSelected: (PhoneAccountHandle?) -> Unit,
         onSipSelected: () -> Unit,
-        onCancel: () -> Unit
+        onCancel: () -> Unit,
+        // ফোনের ডায়ালারে যে SIM চাপা হয়েছে তার handle; অন্য SIM ধূসর ও বন্ধ থাকবে
+        lockedHandle: PhoneAccountHandle? = null
     ) {
         mainHandler.post {
             dismiss()
@@ -125,10 +127,13 @@ object NativeDialerOverlay {
             if (simAccounts.isNotEmpty()) {
                 simAccounts.forEachIndexed { idx, sim ->
                     val pillColor = if (sim.slotIndex == 1) Color.parseColor("#2E8B6E") else Color.parseColor("#3E7FA6")
+                    val isLockedOut = lockedHandle != null &&
+                        simAccounts.any { it.handle == lockedHandle } && sim.handle != lockedHandle
                     val pillBtn = createPillButton(
                         context = appContext,
                         label = "SIM ${sim.slotIndex}",
-                        bgColor = pillColor
+                        bgColor = if (isLockedOut) Color.parseColor("#CBD5E1") else pillColor,
+                        enabled = !isLockedOut
                     ) {
                         dismiss()
                         onSimSelected(sim.handle)
@@ -239,16 +244,18 @@ object NativeDialerOverlay {
         context: Context,
         label: String,
         bgColor: Int,
+        enabled: Boolean = true,
         onClick: () -> Unit
     ): View {
         return TextView(context).apply {
             text = label
-            setTextColor(Color.WHITE)
+            isEnabled = enabled
+            setTextColor(if (enabled) Color.WHITE else Color.parseColor("#94A3B8"))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
             setTypeface(typeface, Typeface.BOLD)
             gravity = Gravity.CENTER
             background = roundedRect(bgColor, dp(context, 24))
-            setOnClickListener { onClick() }
+            if (enabled) setOnClickListener { onClick() }
         }
     }
 

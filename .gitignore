@@ -42,3 +42,6 @@ PROJECT_AUDIT_AND_DEVELOPMENT_PLAN.md
 
 # Private build extras (not published)
 app/src/private/
+
+# Built APKs kept locally per version (never published)
+release/

@@ -2,6 +2,7 @@ package com.noxsip.app.util
 
 import android.content.Context
 import android.media.AudioAttributes
+import android.media.AudioManager
 import android.media.Ringtone
 import android.media.RingtoneManager
 import android.os.Build
@@ -24,7 +25,16 @@ object CallRinger {
     fun start(context: Context) {
         stop()
         val appContext = context.applicationContext
-        try {
+        // ফোনের রিংগার মোড মানি: সাইলেন্টে কিছু না, ভাইব্রেশন মোডে শুধু কাঁপে, স্বাভাবিকে রিংটোন + কাঁপা
+        val ringerMode = try {
+            (appContext.getSystemService(Context.AUDIO_SERVICE) as? AudioManager)?.ringerMode
+                ?: AudioManager.RINGER_MODE_NORMAL
+        } catch (_: Exception) {
+            AudioManager.RINGER_MODE_NORMAL
+        }
+        if (ringerMode == AudioManager.RINGER_MODE_SILENT) return
+        val playRingtone = ringerMode == AudioManager.RINGER_MODE_NORMAL
+        if (playRingtone) try {
             val uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
             val ringtone = RingtoneManager.getRingtone(appContext, uri)
             if (ringtone != null) {

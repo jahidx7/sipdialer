@@ -44,11 +44,6 @@
             android:exported="false"
             android:foregroundServiceType="microphone" />
 
-        <!-- বেটায় আউটগোয়িং কল রিডিরেকশন বন্ধ: ডায়ালপ্যাড থেকেই SIM/SIP বাছাই হয় -->
-        <service
-            android:name="com.noxsip.app.telecom.SipCallRedirectionService"
-            tools:node="remove" />
-
     </application>
 
 </manifest>

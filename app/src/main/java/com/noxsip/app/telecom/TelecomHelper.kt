@@ -280,6 +280,9 @@ object TelecomHelper {
                     putParcelable(TelecomManager.EXTRA_PHONE_ACCOUNT_HANDLE, simHandle)
                 }
             }
+            // আমাদের নিজের বাছাই করা SIM কলে রিডিরেক্ট পপ-আপ দ্বিতীয়বার আসবে না
+            SipCallRedirectionService.bypassNextNumber = number
+            SipCallRedirectionService.bypassUntilMs = System.currentTimeMillis() + 8000L
             telecomManager.placeCall(uri, extras)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to place SIM call with handle", e)
