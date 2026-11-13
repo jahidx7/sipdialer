@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Lite: ডিফল্ট ডায়ালারের ঘোষণা + SIM কল ধরা। SMS ফিচার নেই (কোড ও পারমিশন সরানো হয়েছে)। -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <application>
+
+        <!-- ডিফল্ট ডায়ালার রোলের শর্ত: tel: ছাড়া সাধারণ DIAL ফিল্টার (MainActivity-র সাথে মার্জ হয়) -->
+        <activity
+            android:name="com.noxsip.app.MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.DIAL" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <!-- SIM কলের কল স্ক্রিন -->
+        <activity
+            android:name="com.noxsip.app.beta.BetaCallActivity"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            android:excludeFromRecents="true"
+            android:theme="@style/Theme.SipDialer" />
+
+        <!-- ডিফল্ট ডায়ালার হলে Telecom এই সার্ভিসে প্রতিটা SIM কল পাঠায় -->
+        <service
+            android:name="com.noxsip.app.beta.NoxInCallService"
+            android:exported="true"
+            android:permission="android.permission.BIND_INCALL_SERVICE">
+            <meta-data
+                android:name="android.telecom.IN_CALL_SERVICE_UI"
+                android:value="true" />
+            <intent-filter>
+                <action android:name="android.telecom.InCallService" />
+            </intent-filter>
+        </service>
+
+        <!-- পরীক্ষামূলক SIM কল রেকর্ড (শুধু মাইক) -->
+        <service
+            android:name="com.noxsip.app.beta.SimRecordService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
+
+        <!-- বেটায় আউটগোয়িং কল রিডিরেকশন বন্ধ: ডায়ালপ্যাড থেকেই SIM/SIP বাছাই হয় -->
+        <service
+            android:name="com.noxsip.app.telecom.SipCallRedirectionService"
+            tools:node="remove" />
+
+    </application>
+
+</manifest>

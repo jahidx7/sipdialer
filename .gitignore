@@ -1,0 +1,41 @@
+# Build outputs
+.gradle/
+.kotlin/
+build/
+app/build/
+captures/
+*.apk
+*.aab
+
+# IDE
+.idea/
+*.iml
+.vscode/
+local.properties
+
+# Signing secrets - NEVER commit
+keystore.properties
+keystore/
+*.jks
+*.keystore
+
+# Debug logs captured from devices (contain SIP server/account details)
+*_log.txt
+*_test.txt
+call_hangup_test.txt
+incoming_cancel_log.txt
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# deploy secrets
+deploy.config.ps1
+
+# Private planning documents (kept locally, not published)
+ARCHITECTURE_DECISION_RECORDS.md
+FINAL_DEVELOPMENT_ROADMAP.md
+FINAL_PRODUCT_BLUEPRINT.md
+PRODUCT_NAMING_SHORTLIST.md
+PROJECT_AUDIT_AND_DEVELOPMENT_PLAN.md
