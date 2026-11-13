@@ -494,7 +494,7 @@ fun AccountSetupScreen(
                     modifier = Modifier.fillMaxWidth(),
                     icon = Icons.Filled.Call,
                     title = "Call Forwarding (Beta)",
-                    statusText = if (com.noxsip.app.beta.CallForward.mode(context) != com.noxsip.app.beta.CallForward.OFF) "SIP forwarding on (Experimental)" else "SIM and SIP (SIP is Experimental)",
+                    statusText = if (com.noxsip.app.beta.CallForward.mode(context) != com.noxsip.app.beta.CallForward.OFF) "SIP forwarding on (Experimental)" else "SIM and SIP (Experimental)",
                     isEnabled = com.noxsip.app.beta.CallForward.mode(context) != com.noxsip.app.beta.CallForward.OFF,
                     accentColor = Indigo600,
                     onClick = { showForwarding = true }
