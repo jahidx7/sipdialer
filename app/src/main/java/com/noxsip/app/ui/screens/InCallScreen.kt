@@ -49,6 +49,10 @@ fun InCallScreen(
 ) {
     var showDialpad by remember { mutableStateOf(false) }
     var callDuration by remember { mutableIntStateOf(0) }
+    // কানের কাছে নিলে স্ক্রিন বন্ধ (স্পিকার বা ডায়ালপ্যাড খোলা থাকলে নয়)
+    com.noxsip.app.util.ProximityScreenOffEffect(
+        active = (callState is SipCallState.Connected || callState is SipCallState.Outgoing) && !isSpeaker && !showDialpad
+    )
 
     LaunchedEffect(callState) {
         if (callState is SipCallState.Connected) {

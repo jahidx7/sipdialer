@@ -7,6 +7,7 @@ import android.graphics.PixelFormat
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
+import android.os.SystemClock
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
@@ -49,6 +50,11 @@ object CallBarOverlay {
     private var timerJob: Job? = null
     private var statusView: TextView? = null
 
+    /** আউটগোয়িং কল শুরুতে অ্যাপের কল স্ক্রিন খোলার সময় দিতে বার দেখানো একটু দেরি করি (ঝলক এড়াতে) */
+    private const val OUT_GRACE_MS = 1500L
+    private var outSince = 0L
+    private var graceJob: Job? = null
+
     fun attach(context: Context, engine: SipEngine) {
         if (attached) return
         attached = true
@@ -79,6 +85,12 @@ object CallBarOverlay {
             is SipCallState.OnHold -> s.remoteAddress
             else -> ""
         }
+        if (kind == "out") {
+            if (outSince == 0L) outSince = SystemClock.elapsedRealtime()
+        } else {
+            outSince = 0L
+            graceJob?.cancel()
+        }
         val callScreenVisible = fg && route
         val hide = kind == null ||
             callScreenVisible ||
@@ -87,6 +99,21 @@ object CallBarOverlay {
         if (hide) {
             dismiss()
             return
+        }
+        if (kind == "out" && bar == null) {
+            val remaining = OUT_GRACE_MS - (SystemClock.elapsedRealtime() - outSince)
+            if (remaining > 0) {
+                graceJob?.cancel()
+                graceJob = scope.launch {
+                    delay(remaining)
+                    try {
+                        render(app, engine, engine.callState.value, appForeground.value, onCallRoute.value)
+                    } catch (e: Exception) {
+                        android.util.Log.w("CallBarOverlay", "delayed render failed", e)
+                    }
+                }
+                return
+            }
         }
         val key = "$kind|$address"
         if (bar == null || barKey != key) {

@@ -38,12 +38,6 @@
             </intent-filter>
         </service>
 
-        <!-- পরীক্ষামূলক SIM কল রেকর্ড (শুধু মাইক) -->
-        <service
-            android:name="com.noxsip.app.beta.SimRecordService"
-            android:exported="false"
-            android:foregroundServiceType="microphone" />
-
     </application>
 
 </manifest>

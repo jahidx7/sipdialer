@@ -137,6 +137,12 @@ private fun BetaCallScreen(onClose: () -> Unit) {
         }
     }
     var showDialpad by remember { mutableStateOf(false) }
+    // কানের কাছে নিলে স্ক্রিন বন্ধ (ইয়ারপিস রুট, কল ডায়াল/অ্যাক্টিভ, ডায়ালপ্যাড বন্ধ)
+    com.noxsip.app.util.ProximityScreenOffEffect(
+        active = call != null &&
+            (call.state == Call.STATE_ACTIVE || call.state == Call.STATE_DIALING || call.state == Call.STATE_CONNECTING) &&
+            audio?.route == CallAudioState.ROUTE_EARPIECE && !showDialpad
+    )
 
     Box(
         modifier = Modifier

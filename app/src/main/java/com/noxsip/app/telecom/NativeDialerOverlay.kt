@@ -428,9 +428,9 @@ object NativeDialerOverlay {
      * নেটিভ ডায়ালার থেকে SIP কলের জন্য আলাদা ওভারলে না দেখিয়ে অ্যাপের নিজস্ব কল স্ক্রিন (InCallScreen) খোলে।
      * কল স্টেট Outgoing হলেই MainActivity নিজে InCall স্ক্রিনে চলে যায়।
      */
-    fun openAppCallScreen(context: Context) {
+    fun openAppCallScreen(context: Context, returnToPrevious: Boolean = true) {
         try {
-            returnToPreviousAfterCall = true
+            if (returnToPrevious) returnToPreviousAfterCall = true
             val intent = android.content.Intent(context.applicationContext, com.noxsip.app.MainActivity::class.java).apply {
                 flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK or
                     android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP or

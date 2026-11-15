@@ -109,7 +109,7 @@ fun CallDetailsScreen(
     LaunchedEffect(number) { messengers = try { detectMessengers(number) } catch (_: Exception) { false to false } }
 
     // রেকর্ডিং প্লেয়ার
-    var player by remember { mutableStateOf<MediaPlayer?>(null) }
+    var player by remember { mutableStateOf<com.noxsip.app.util.RecPlayer?>(null) }
     var playingId by remember { mutableStateOf<Long?>(null) }
     var positionMs by remember { mutableIntStateOf(0) }
     var durationMs by remember { mutableIntStateOf(0) }
@@ -121,12 +121,11 @@ fun CallDetailsScreen(
     }
     LaunchedEffect(playingId) {
         while (playingId != null) {
-            try { player?.let { positionMs = it.currentPosition } } catch (_: Exception) {}
+            try { player?.let { positionMs = it.positionMs() } } catch (_: Exception) {}
             delay(200)
         }
     }
     fun stopPlayback() {
-        try { player?.stop() } catch (_: Exception) {}
         try { player?.release() } catch (_: Exception) {}
         player = null
         playingId = null
@@ -136,18 +135,22 @@ fun CallDetailsScreen(
         val wasThis = playingId == r.id
         stopPlayback()
         if (wasThis) return
-        try {
-            val mp = MediaPlayer().apply {
-                RecordingStorage.setDataSource(this, ctx, r.recordingPath)
-                setOnCompletionListener { stopPlayback() }
-                prepare()
-                start()
+        val mp = RecordingStorage.startPlayer(
+            ctx, r.recordingPath,
+            onCompletion = { stopPlayback() },
+            onError = {
+                stopPlayback()
+                if (!RecordingStorage.openExternally(ctx, r.recordingPath)) {
+                    android.widget.Toast.makeText(ctx, "Could not play this recording", android.widget.Toast.LENGTH_SHORT).show()
+                }
             }
+        )
+        if (mp != null) {
             player = mp
-            durationMs = mp.duration
+            durationMs = try { mp.durationMs() } catch (_: Exception) { 0 }
             playingId = r.id
-        } catch (_: Exception) {
-            stopPlayback()
+        } else if (!RecordingStorage.openExternally(ctx, r.recordingPath)) {
+            android.widget.Toast.makeText(ctx, "Could not play this recording", android.widget.Toast.LENGTH_SHORT).show()
         }
     }
 
