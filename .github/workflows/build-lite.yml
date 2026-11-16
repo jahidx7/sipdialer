@@ -3,7 +3,7 @@ name: Build NoxSIP Lite APK
 on:
   push:
     branches:
-      - codex/auto-answer-lite-apk
+      - codex/auto-answer-audio
   workflow_dispatch:
 
 permissions:
@@ -77,4 +77,4 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --title "NoxSIP Lite ${APP_VERSION}" \
-            --notes "Auto Answer is optional and off by default. This APK is a debug-signed sideload build; remove an older installation if Android reports a signature conflict. A persistent signing key is required for seamless upgrades across future builds."
+            --notes "Auto Answer can stream the audio file selected in Settings to the caller after the call connects. This APK is a debug-signed sideload build; remove an older installation if Android reports a signature conflict. A persistent signing key is required for seamless upgrades across future builds."
