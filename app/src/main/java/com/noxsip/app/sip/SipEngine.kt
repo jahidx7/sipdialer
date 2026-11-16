@@ -15,6 +15,7 @@ import com.noxsip.app.telecom.TelecomHelper
 import com.noxsip.app.service.SipForegroundService
 import com.noxsip.app.util.CallNetworkLock
 import com.noxsip.app.util.CallRinger
+import com.noxsip.app.util.AutoAnswerPrefs
 import com.noxsip.app.util.RecordingStorage
 import com.noxsip.app.util.NotificationHelper
 import kotlinx.coroutines.CoroutineScope
@@ -570,15 +571,24 @@ class SipEngine(private val context: Context) {
                         forwardSipCall(call, fwNum)
                         return
                     }
+                    resetInviteTracking()
+                    onInviteArrived() // প্রথম INVITE এইমাত্র এসেছে
+                    _callAccountUser.value = labelForCall(call)
+                    _callState.value = SipCallState.Incoming(remoteAddress, call)
+                    if (AutoAnswerPrefs.isEnabled(context)) {
+                        // Use the same answer path as the in-call controls so audio and foreground service setup match.
+                        mainHandler.post {
+                            val stillIncoming = call.state == Call.State.IncomingReceived ||
+                                call.state == Call.State.IncomingEarlyMedia
+                            if (stillIncoming) answerCall()
+                        }
+                        return
+                    }
                     activeRecordingPath = prepareRecordingPath(remoteAddress)
                     try {
                         call.notifyRinging()
                     } catch (_: Exception) {
                     }
-                    resetInviteTracking()
-                    onInviteArrived() // প্রথম INVITE এইমাত্র এসেছে
-                    _callAccountUser.value = labelForCall(call)
-                    _callState.value = SipCallState.Incoming(remoteAddress, call)
                     CallRinger.start(context)
                     TelecomHelper.reportIncomingCall(context, remoteAddress)
                     mainHandler.removeCallbacks(ringingWatchdog)
