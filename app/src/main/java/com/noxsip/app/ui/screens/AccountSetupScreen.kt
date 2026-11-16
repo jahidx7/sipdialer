@@ -50,6 +50,7 @@ import com.noxsip.app.sip.SipRegistrationState
 import com.noxsip.app.telecom.CallChoiceActivity
 import com.noxsip.app.telecom.NativeDialerOverlay
 import com.noxsip.app.telecom.TelecomHelper
+import com.noxsip.app.util.AutoAnswerPrefs
 import com.noxsip.app.ui.theme.Amber500
 import com.noxsip.app.ui.theme.Green500
 import com.noxsip.app.ui.theme.Indigo600
@@ -111,6 +112,9 @@ fun AccountSetupScreen(
     var autoRecordCalls by remember {
         mutableStateOf(TelecomHelper.isAutoRecordEnabled(context))
     }
+    var autoAnswerCalls by remember {
+        mutableStateOf(AutoAnswerPrefs.isEnabled(context))
+    }
     var batteryOk by remember {
         mutableStateOf(com.noxsip.app.util.BatteryOptimization.isIgnoring(context))
     }
@@ -148,6 +152,7 @@ fun AccountSetupScreen(
                 checklistTick++
                 routingMode = TelecomHelper.getNativeCallRoutingMode(context)
                 autoRecordCalls = TelecomHelper.isAutoRecordEnabled(context)
+                autoAnswerCalls = AutoAnswerPrefs.isEnabled(context)
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -235,6 +240,44 @@ fun AccountSetupScreen(
                     onCheckedChange = {
                         autoRecordCalls = it
                         TelecomHelper.setAutoRecordEnabled(context, it)
+                    }
+                )
+            }
+            // Auto-answer applies to incoming SIP calls and stays off until enabled by the user.
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable {
+                        autoAnswerCalls = !autoAnswerCalls
+                        AutoAnswerPrefs.setEnabled(context, autoAnswerCalls)
+                    }
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFF0D9488).copy(alpha = 0.14f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Filled.CallReceived, contentDescription = null, tint = Color(0xFF0D9488), modifier = Modifier.size(24.dp))
+                }
+                Spacer(modifier = Modifier.width(14.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Auto Answer", fontSize = 16.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
+                    Text(
+                        if (autoAnswerCalls) "On: incoming SIP calls are answered automatically" else "Off: answer incoming SIP calls manually",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = autoAnswerCalls,
+                    onCheckedChange = {
+                        autoAnswerCalls = it
+                        AutoAnswerPrefs.setEnabled(context, it)
                     }
                 )
             }
