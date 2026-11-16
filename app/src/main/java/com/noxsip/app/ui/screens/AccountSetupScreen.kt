@@ -51,6 +51,9 @@ import com.noxsip.app.telecom.CallChoiceActivity
 import com.noxsip.app.telecom.NativeDialerOverlay
 import com.noxsip.app.telecom.TelecomHelper
 import com.noxsip.app.util.AutoAnswerPrefs
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import com.noxsip.app.ui.theme.Amber500
 import com.noxsip.app.ui.theme.Green500
 import com.noxsip.app.ui.theme.Indigo600
@@ -114,6 +117,35 @@ fun AccountSetupScreen(
     }
     var autoAnswerCalls by remember {
         mutableStateOf(AutoAnswerPrefs.isEnabled(context))
+    }
+    var autoAnswerAudioName by remember {
+        mutableStateOf(AutoAnswerPrefs.audioName(context))
+    }
+    var importingAutoAnswerAudio by remember { mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
+    val autoAnswerAudioPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            importingAutoAnswerAudio = true
+            coroutineScope.launch {
+                try {
+                    val selectedName = withContext(Dispatchers.IO) {
+                        AutoAnswerPrefs.importAudio(context, uri)
+                    }
+                    autoAnswerAudioName = selectedName
+                    Toast.makeText(context, "Auto Answer audio selected", Toast.LENGTH_SHORT).show()
+                } catch (e: Exception) {
+                    Toast.makeText(
+                        context,
+                        "Could not process this audio file",
+                        Toast.LENGTH_LONG
+                    ).show()
+                } finally {
+                    importingAutoAnswerAudio = false
+                }
+            }
+        }
     }
     var batteryOk by remember {
         mutableStateOf(com.noxsip.app.util.BatteryOptimization.isIgnoring(context))
@@ -280,6 +312,50 @@ fun AccountSetupScreen(
                         AutoAnswerPrefs.setEnabled(context, it)
                     }
                 )
+            }
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                border = BorderStroke(1.dp, Color(0xFF0D9488).copy(alpha = 0.24f))
+            ) {
+                Column(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Filled.MusicNote, contentDescription = null, tint = Color(0xFF0D9488), modifier = Modifier.size(22.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Auto Answer Audio", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                            Text(
+                                autoAnswerAudioName?.let { "Selected: $it" } ?: "Choose a song or audio file to play to the caller",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedButton(
+                            onClick = { autoAnswerAudioPicker.launch(arrayOf("audio/*")) },
+                            enabled = !importingAutoAnswerAudio
+                        ) {
+                            Icon(Icons.Filled.FolderOpen, contentDescription = null)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(if (importingAutoAnswerAudio) "Preparing audio..." else "Choose audio")
+                        }
+                        if (autoAnswerAudioName != null) {
+                            TextButton(
+                                onClick = {
+                                    AutoAnswerPrefs.clearAudio(context)
+                                    autoAnswerAudioName = null
+                                }
+                            ) { Text("Remove") }
+                        }
+                    }
+                }
             }
             SettingsRow(Icons.Filled.PhoneInTalk, "Dialer & Permission", "Phone dialer integration", Color(0xFF16A34A)) { settingsTab = 2 }
             SettingsRow(Icons.Filled.BatteryChargingFull, "Power Mode", "Battery mode", Color(0xFFEA8A00)) { settingsTab = 4 }
