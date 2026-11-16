@@ -40,9 +40,10 @@ object AudioToWavConverter {
             val inputFormat = extractor.getTrackFormat(trackIndex)
             val mime = inputFormat.getString(MediaFormat.KEY_MIME)
                 ?: throw IOException("The selected audio format could not be read")
-            decoder = MediaCodec.createDecoderByType(mime)
-            decoder.configure(inputFormat, null, null, 0)
-            decoder.start()
+            val audioDecoder = MediaCodec.createDecoderByType(mime)
+            decoder = audioDecoder
+            audioDecoder.configure(inputFormat, null, null, 0)
+            audioDecoder.start()
 
             var sampleRate = inputFormat.getInteger(MediaFormat.KEY_SAMPLE_RATE)
             var channels = inputFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
@@ -58,20 +59,20 @@ object AudioToWavConverter {
 
                 while (!outputFinished) {
                     if (!inputFinished) {
-                        val inputIndex = decoder.dequeueInputBuffer(TIMEOUT_US)
+                        val inputIndex = audioDecoder.dequeueInputBuffer(TIMEOUT_US)
                         if (inputIndex >= 0) {
-                            val inputBuffer = decoder.getInputBuffer(inputIndex)
+                            val inputBuffer = audioDecoder.getInputBuffer(inputIndex)
                                 ?: throw IOException("Audio decoder input buffer is unavailable")
                             inputBuffer.clear()
                             val sampleSize = extractor.readSampleData(inputBuffer, 0)
                             if (sampleSize < 0) {
-                                decoder.queueInputBuffer(
+                                audioDecoder.queueInputBuffer(
                                     inputIndex, 0, 0, 0L,
                                     MediaCodec.BUFFER_FLAG_END_OF_STREAM
                                 )
                                 inputFinished = true
                             } else {
-                                decoder.queueInputBuffer(
+                                audioDecoder.queueInputBuffer(
                                     inputIndex,
                                     0,
                                     sampleSize,
@@ -83,10 +84,10 @@ object AudioToWavConverter {
                         }
                     }
 
-                    when (val outputIndex = decoder.dequeueOutputBuffer(info, TIMEOUT_US)) {
+                    when (val outputIndex = audioDecoder.dequeueOutputBuffer(info, TIMEOUT_US)) {
                         MediaCodec.INFO_TRY_AGAIN_LATER -> Unit
                         MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
-                            val format = decoder.outputFormat
+                            val format = audioDecoder.outputFormat
                             if (format.containsKey(MediaFormat.KEY_SAMPLE_RATE)) {
                                 sampleRate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE)
                             }
@@ -98,7 +99,7 @@ object AudioToWavConverter {
                             }
                         }
                         else -> if (outputIndex >= 0) {
-                            val outputBuffer = decoder.getOutputBuffer(outputIndex)
+                            val outputBuffer = audioDecoder.getOutputBuffer(outputIndex)
                             if (outputBuffer != null &&
                                 info.size > 0 &&
                                 (info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG) == 0
@@ -107,14 +108,14 @@ object AudioToWavConverter {
                             }
                             outputFinished =
                                 (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0
-                            decoder.releaseOutputBuffer(outputIndex, false)
+                            audioDecoder.releaseOutputBuffer(outputIndex, false)
                         }
                     }
                 }
             }
 
             if (bytesWritten == 0L) throw IOException("No playable audio was decoded")
-            if (bytesWritten > 0xFFFFFFFFL - 36L) {
+            if (bytesWritten > Int.MAX_VALUE.toLong() - 36L) {
                 throw IOException("The selected audio file is too large")
             }
             writeWavHeader(temporary, sampleRate, channels, bytesWritten)
@@ -154,6 +155,36 @@ object AudioToWavConverter {
         buffer.limit(info.offset + info.size)
 
         return when (encoding) {
+            AudioFormat.ENCODING_PCM_16BIT -> {
+                val bytes = ByteArray(buffer.remaining())
+                buffer.get(bytes)
+                output.write(bytes)
+                bytes.size.toLong()
+            }
+            AudioFormat.ENCODING_PCM_24BIT_PACKED -> {
+                var byteCount = 0L
+                while (buffer.remaining() >= 3) {
+                    var value = (buffer.get().toInt() and 0xFF) or
+                        ((buffer.get().toInt() and 0xFF) shl 8) or
+                        ((buffer.get().toInt() and 0xFF) shl 16)
+                    if ((value and 0x800000) != 0) value = value or -0x1000000
+                    value = value shr 8
+                    output.write(value and 0xFF)
+                    output.write((value ushr 8) and 0xFF)
+                    byteCount += 2
+                }
+                byteCount
+            }
+            AudioFormat.ENCODING_PCM_32BIT -> {
+                var byteCount = 0L
+                while (buffer.remaining() >= 4) {
+                    val value = buffer.int shr 16
+                    output.write(value and 0xFF)
+                    output.write((value ushr 8) and 0xFF)
+                    byteCount += 2
+                }
+                byteCount
+            }
             AudioFormat.ENCODING_PCM_FLOAT -> {
                 var byteCount = 0L
                 while (buffer.remaining() >= 4) {
@@ -176,17 +207,12 @@ object AudioToWavConverter {
                 }
                 byteCount
             }
-            else -> {
-                val bytes = ByteArray(buffer.remaining())
-                buffer.get(bytes)
-                output.write(bytes)
-                bytes.size.toLong()
-            }
+            else -> throw IOException("The audio decoder returned an unsupported PCM format")
         }
     }
 
     private fun writeWavHeader(file: File, sampleRate: Int, channels: Int, dataSize: Long) {
-        val safeChannels = channels.coerceIn(1, 2)
+        val safeChannels = channels.coerceIn(1, 8)
         val safeRate = sampleRate.coerceAtLeast(8_000)
         val blockAlign = safeChannels * 2
         RandomAccessFile(file, "rw").use { wav ->
