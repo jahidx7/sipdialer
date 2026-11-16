@@ -1,0 +1,80 @@
+name: Build NoxSIP Lite APK
+
+on:
+  push:
+    branches:
+      - codex/auto-answer-lite-apk
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-lite:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7.0.1
+
+      - name: Set up Java
+        uses: actions/setup-java@v6.3.0
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4.0.4
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+
+      - name: Build installable Lite APK
+        run: |
+          chmod +x ./gradlew
+          ./gradlew --no-daemon :app:assembleLiteDebug
+
+      - name: Package APK and source archive
+        id: package
+        shell: bash
+        run: |
+          set -euo pipefail
+          app_version="$(grep -A8 'create("lite")' app/build.gradle.kts | sed -n 's/^[[:space:]]*versionName = "\([^"]*\)".*/\1/p' | head -n1)"
+          if [[ -z "$app_version" ]]; then
+            echo "Could not read Lite versionName from app/build.gradle.kts" >&2
+            exit 1
+          fi
+          mkdir -p dist
+          cp app/build/outputs/apk/lite/debug/app-lite-debug.apk "dist/NoxSIP-Lite-${app_version}.apk"
+          git archive --format=zip --output="dist/NoxSIP-Lite-Source-${app_version}.zip" "$GITHUB_SHA"
+          (cd dist && sha256sum *.apk *.zip > SHA256SUMS.txt)
+          echo "app_version=$app_version" >> "$GITHUB_OUTPUT"
+
+      - name: Upload build files
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: NoxSIP-Lite-${{ steps.package.outputs.app_version }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish downloadable APK and source ZIP
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APP_VERSION: ${{ steps.package.outputs.app_version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="lite-v${APP_VERSION}"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $tag already exists. Increment the Lite versionCode and versionName before publishing another build." >&2
+            exit 1
+          fi
+          gh release create "$tag" \
+            "dist/NoxSIP-Lite-${APP_VERSION}.apk" \
+            "dist/NoxSIP-Lite-Source-${APP_VERSION}.zip" \
+            "dist/SHA256SUMS.txt" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "NoxSIP Lite ${APP_VERSION}" \
+            --notes "Auto Answer is optional and off by default. This APK is a debug-signed sideload build; remove an older installation if Android reports a signature conflict. A persistent signing key is required for seamless upgrades across future builds."
