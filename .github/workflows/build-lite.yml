@@ -3,7 +3,7 @@ name: Build NoxSIP Lite APK
 on:
   push:
     branches:
-      - codex/auto-answer-audio
+      - codex/auto-answer-stable-signing
   workflow_dispatch:
 
 permissions:
@@ -15,6 +15,16 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v7.0.1
+
+      - name: Require the stable signing password
+        env:
+          ANDROID_SIGNING_PASSWORD: ${{ secrets.ANDROID_SIGNING_PASSWORD }}
+        shell: bash
+        run: |
+          if [[ -z "$ANDROID_SIGNING_PASSWORD" ]]; then
+            echo "::error title=Signing setup required::Add the repository Actions secret ANDROID_SIGNING_PASSWORD, then rerun this workflow. Do not commit the password or keystore."
+            exit 1
+          fi
 
       - name: Set up Java
         uses: actions/setup-java@v6.3.0
@@ -28,23 +38,50 @@ jobs:
         with:
           packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
 
-      - name: Build installable Lite APK
+      - name: Restore or create the persistent signing key
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ANDROID_SIGNING_PASSWORD: ${{ secrets.ANDROID_SIGNING_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          key_tag="noxsip-signing-key-v1"
+          keystore="$RUNNER_TEMP/noxsip-release.p12"
+          encrypted="$RUNNER_TEMP/noxsip-signing-key.p12.enc"
+
+          if gh release view "$key_tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release download "$key_tag"               --repo "$GITHUB_REPOSITORY"               --pattern "noxsip-signing-key.p12.enc"               --dir "$RUNNER_TEMP"
+            openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -md sha256               -in "$encrypted" -out "$keystore"               -pass env:ANDROID_SIGNING_PASSWORD
+          else
+            keytool -genkeypair -v               -keystore "$keystore"               -storetype PKCS12               -storepass "$ANDROID_SIGNING_PASSWORD"               -keypass "$ANDROID_SIGNING_PASSWORD"               -alias noxsip               -keyalg RSA -keysize 2048 -validity 10000               -dname "CN=NoxSIP Lite, OU=Android, O=NoxSIP, L=Dhaka, ST=Dhaka, C=BD"
+            openssl enc -aes-256-cbc -salt -pbkdf2 -iter 600000 -md sha256               -in "$keystore" -out "$encrypted"               -pass env:ANDROID_SIGNING_PASSWORD
+            gh release create "$key_tag" "$encrypted"               --repo "$GITHUB_REPOSITORY"               --target "$GITHUB_SHA"               --title "NoxSIP Lite encrypted signing key"               --notes "Encrypted signing-key backup. The password is stored in repository Actions secrets."               --latest=false
+          fi
+
+          {
+            printf 'storeFile=%s\n' "$keystore"
+            printf 'storePassword=%s\n' "$ANDROID_SIGNING_PASSWORD"
+            printf 'keyAlias=noxsip\n'
+            printf 'keyPassword=%s\n' "$ANDROID_SIGNING_PASSWORD"
+          } > keystore.properties
+
+      - name: Build signed Lite APK
         run: |
           chmod +x ./gradlew
-          ./gradlew --no-daemon :app:assembleLiteDebug
+          ./gradlew --no-daemon :app:assembleLiteRelease
 
       - name: Package APK and source archive
         id: package
         shell: bash
         run: |
           set -euo pipefail
-          app_version="$(grep -A8 'create("lite")' app/build.gradle.kts | sed -n 's/^[[:space:]]*versionName = "\([^"]*\)".*/\1/p' | head -n1)"
+          app_version="$(grep -A8 'create("lite")' app/build.gradle.kts | sed -n 's/^[[:space:]]*versionName = "\\([^"]*\\)".*/\\1/p' | head -n1)"
           if [[ -z "$app_version" ]]; then
             echo "Could not read Lite versionName from app/build.gradle.kts" >&2
             exit 1
           fi
           mkdir -p dist
-          cp app/build/outputs/apk/lite/debug/app-lite-debug.apk "dist/NoxSIP-Lite-${app_version}.apk"
+          cp app/build/outputs/apk/lite/release/app-lite-release.apk "dist/NoxSIP-Lite-${app_version}.apk"
           git archive --format=zip --output="dist/NoxSIP-Lite-Source-${app_version}.zip" "$GITHUB_SHA"
           (cd dist && sha256sum *.apk *.zip > SHA256SUMS.txt)
           echo "app_version=$app_version" >> "$GITHUB_OUTPUT"
@@ -58,7 +95,7 @@ jobs:
           retention-days: 30
 
       - name: Publish downloadable APK and source ZIP
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         env:
           GH_TOKEN: ${{ github.token }}
           APP_VERSION: ${{ steps.package.outputs.app_version }}
@@ -70,11 +107,4 @@ jobs:
             echo "Release $tag already exists. Increment the Lite versionCode and versionName before publishing another build." >&2
             exit 1
           fi
-          gh release create "$tag" \
-            "dist/NoxSIP-Lite-${APP_VERSION}.apk" \
-            "dist/NoxSIP-Lite-Source-${APP_VERSION}.zip" \
-            "dist/SHA256SUMS.txt" \
-            --repo "$GITHUB_REPOSITORY" \
-            --target "$GITHUB_SHA" \
-            --title "NoxSIP Lite ${APP_VERSION}" \
-            --notes "Auto Answer can stream the audio file selected in Settings to the caller after the call connects. This APK is a debug-signed sideload build; remove an older installation if Android reports a signature conflict. A persistent signing key is required for seamless upgrades across future builds."
+          gh release create "$tag"             "dist/NoxSIP-Lite-${APP_VERSION}.apk"             "dist/NoxSIP-Lite-Source-${APP_VERSION}.zip"             "dist/SHA256SUMS.txt"             --repo "$GITHUB_REPOSITORY"             --target "$GITHUB_SHA"             --title "NoxSIP Lite ${APP_VERSION}"             --notes "Auto Answer streams the selected audio after connection. This build uses the persistent signing key saved encrypted in this repository's releases. The first install after signing migration requires uninstalling the old app; later versionCode updates use the same key."
