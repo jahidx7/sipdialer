@@ -15,7 +15,7 @@ and backups are local, password-protected files.
 - **Multiple SIP accounts**: add, edit, delete, enable/disable; the selected account is used for outgoing calls.
 - **Dialer integration**: default-dialer role, SIM 1 / SIM 2 / SIP chooser when dialing, SIM call screen.
 - **Reliable incoming calls**: foreground service, wake locks, full-screen incoming call UI on the lock screen.
-- **Auto Answer**: optional setting for incoming SIP calls; disabled by default and applied after block and call-forwarding rules.
+- **Auto Answer**: optional setting for incoming SIP calls; disabled by default and applied after block and call-forwarding rules. A selected music/audio file is normalized to WAV and streamed to the caller after the call connects.
 - **Audio quality**: G.711 (PCMA/PCMU) by default, optional HD codecs (Opus / G.722), mic boost, DSCP marking,
   live call quality stats.
 - **Call recording**: automatic, saved to phone storage.
