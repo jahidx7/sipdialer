@@ -25,6 +25,10 @@ jobs:
             echo "::error title=Signing setup required::Add the repository Actions secret ANDROID_SIGNING_PASSWORD, then rerun this workflow. Do not commit the password or keystore."
             exit 1
           fi
+          if [[ ! "$ANDROID_SIGNING_PASSWORD" =~ ^[A-Za-z0-9]{32,}$ ]]; then
+            echo "::error title=Invalid signing password::Use a 32-character-or-longer alphanumeric password so Gradle properties can read it safely."
+            exit 1
+          fi
 
       - name: Set up Java
         uses: actions/setup-java@v6.3.0
@@ -50,14 +54,36 @@ jobs:
           encrypted="$RUNNER_TEMP/noxsip-signing-key.p12.enc"
 
           if gh release view "$key_tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release download "$key_tag"               --repo "$GITHUB_REPOSITORY"               --pattern "noxsip-signing-key.p12.enc"               --dir "$RUNNER_TEMP"
-            openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -md sha256               -in "$encrypted" -out "$keystore"               -pass env:ANDROID_SIGNING_PASSWORD
+            gh release download "$key_tag" \
+              --repo "$GITHUB_REPOSITORY" \
+              --pattern "noxsip-signing-key.p12.enc" \
+              --dir "$RUNNER_TEMP"
+            test -s "$encrypted"
+            openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -md sha256 \
+              -in "$encrypted" -out "$keystore" \
+              -pass env:ANDROID_SIGNING_PASSWORD
           else
-            keytool -genkeypair -v               -keystore "$keystore"               -storetype PKCS12               -storepass "$ANDROID_SIGNING_PASSWORD"               -keypass "$ANDROID_SIGNING_PASSWORD"               -alias noxsip               -keyalg RSA -keysize 2048 -validity 10000               -dname "CN=NoxSIP Lite, OU=Android, O=NoxSIP, L=Dhaka, ST=Dhaka, C=BD"
-            openssl enc -aes-256-cbc -salt -pbkdf2 -iter 600000 -md sha256               -in "$keystore" -out "$encrypted"               -pass env:ANDROID_SIGNING_PASSWORD
-            gh release create "$key_tag" "$encrypted"               --repo "$GITHUB_REPOSITORY"               --target "$GITHUB_SHA"               --title "NoxSIP Lite encrypted signing key"               --notes "Encrypted signing-key backup. The password is stored in repository Actions secrets."               --latest=false
+            keytool -genkeypair -v \
+              -keystore "$keystore" \
+              -storetype PKCS12 \
+              -storepass "$ANDROID_SIGNING_PASSWORD" \
+              -keypass "$ANDROID_SIGNING_PASSWORD" \
+              -alias noxsip \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=NoxSIP Lite, OU=Android, O=NoxSIP, L=Dhaka, ST=Dhaka, C=BD"
+            openssl enc -aes-256-cbc -salt -pbkdf2 -iter 600000 -md sha256 \
+              -in "$keystore" -out "$encrypted" \
+              -pass env:ANDROID_SIGNING_PASSWORD
+            gh release create "$key_tag" "$encrypted" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "NoxSIP Lite encrypted signing key" \
+              --notes "Encrypted signing-key backup. The password is stored in repository Actions secrets." \
+              --latest=false
           fi
 
+          keytool -list -keystore "$keystore" -storetype PKCS12 \
+            -storepass "$ANDROID_SIGNING_PASSWORD" -alias noxsip >/dev/null
           {
             printf 'storeFile=%s\n' "$keystore"
             printf 'storePassword=%s\n' "$ANDROID_SIGNING_PASSWORD"
@@ -75,7 +101,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          app_version="$(grep -A8 'create("lite")' app/build.gradle.kts | sed -n 's/^[[:space:]]*versionName = "\\([^"]*\\)".*/\\1/p' | head -n1)"
+          app_version="$(awk -F '"' '/create\("lite"\)/ { in_lite=1; next } in_lite && /versionName[[:space:]]*=/ { print $2; exit }' app/build.gradle.kts)"
           if [[ -z "$app_version" ]]; then
             echo "Could not read Lite versionName from app/build.gradle.kts" >&2
             exit 1
@@ -107,4 +133,11 @@ jobs:
             echo "Release $tag already exists. Increment the Lite versionCode and versionName before publishing another build." >&2
             exit 1
           fi
-          gh release create "$tag"             "dist/NoxSIP-Lite-${APP_VERSION}.apk"             "dist/NoxSIP-Lite-Source-${APP_VERSION}.zip"             "dist/SHA256SUMS.txt"             --repo "$GITHUB_REPOSITORY"             --target "$GITHUB_SHA"             --title "NoxSIP Lite ${APP_VERSION}"             --notes "Auto Answer streams the selected audio after connection. This build uses the persistent signing key saved encrypted in this repository's releases. The first install after signing migration requires uninstalling the old app; later versionCode updates use the same key."
+          gh release create "$tag" \
+            "dist/NoxSIP-Lite-${APP_VERSION}.apk" \
+            "dist/NoxSIP-Lite-Source-${APP_VERSION}.zip" \
+            "dist/SHA256SUMS.txt" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "NoxSIP Lite ${APP_VERSION}" \
+            --notes "Auto Answer streams the selected audio after connection. This build uses the persistent signing key saved encrypted in this repository's releases. The first install after signing migration requires uninstalling the old app; later versionCode updates use the same key."
