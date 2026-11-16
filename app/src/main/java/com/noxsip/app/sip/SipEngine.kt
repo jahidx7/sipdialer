@@ -198,6 +198,8 @@ class SipEngine(private val context: Context) {
     private var activeCallConnected = false
     private var activeCallRecorded = false
     private var activeRecordingPath: String = ""
+    private var pendingAutoAnswerAudioRemote: String? = null
+    private var activeAutoAnswerAudioPlayer: Player? = null
 
     // ---- ইনকামিং কল "কলার কেটে দিয়েছে" শনাক্তকরণ (CANCEL না পাঠানো গেটওয়ের জন্য) ----
     // কিছু PSTN গেটওয়ে (যেমন SemuxGW) কলার কাটলে CANCEL পাঠায় না; শুধু প্রতি ~৩ সেকেন্ডে INVITE
@@ -287,6 +289,44 @@ class SipEngine(private val context: Context) {
             } catch (_: Exception) {
             }
         }
+    }
+
+    private fun startAutoAnswerAudio(call: Call, remoteAddress: String) {
+        if (pendingAutoAnswerAudioRemote != remoteAddress) return
+        pendingAutoAnswerAudioRemote = null
+        val audioPath = AutoAnswerPrefs.audioPath(context)
+        if (audioPath == null) {
+            Log.i(TAG, "Auto-answer has no selected audio file")
+            return
+        }
+        try {
+            val player = call.player
+            val openResult = player.open(audioPath)
+            if (openResult < 0) {
+                Log.w(TAG, "Linphone could not open the selected Auto Answer audio")
+                try { player.close() } catch (_: Exception) {}
+                return
+            }
+            val startResult = player.start()
+            if (startResult < 0) {
+                Log.w(TAG, "Linphone could not start Auto Answer audio playback")
+                try { player.close() } catch (_: Exception) {}
+                return
+            }
+            activeAutoAnswerAudioPlayer = player
+            Log.i(TAG, "Auto-answer audio playback started")
+        } catch (e: Exception) {
+            Log.w(TAG, "Auto-answer audio playback failed: ${e.message}")
+        }
+    }
+
+    private fun stopAutoAnswerAudio() {
+        try {
+            activeAutoAnswerAudioPlayer?.close()
+        } catch (_: Exception) {
+        }
+        activeAutoAnswerAudioPlayer = null
+        pendingAutoAnswerAudioRemote = null
     }
 
     private fun prepareRecordingPath(remote: String): String {
@@ -575,7 +615,9 @@ class SipEngine(private val context: Context) {
                     onInviteArrived() // প্রথম INVITE এইমাত্র এসেছে
                     _callAccountUser.value = labelForCall(call)
                     _callState.value = SipCallState.Incoming(remoteAddress, call)
+                    stopAutoAnswerAudio()
                     if (AutoAnswerPrefs.isEnabled(context)) {
+                        pendingAutoAnswerAudioRemote = remoteAddress
                         // Use the same answer path as the in-call controls so audio and foreground service setup match.
                         mainHandler.post {
                             val stillIncoming = call.state == Call.State.IncomingReceived ||
@@ -625,6 +667,9 @@ class SipEngine(private val context: Context) {
                 }
                 Call.State.Connected, Call.State.StreamsRunning -> {
                     mainHandler.removeCallbacks(ringingWatchdog)
+                    if (state == Call.State.StreamsRunning) {
+                        mainHandler.post { startAutoAnswerAudio(call, remoteAddress) }
+                    }
                     applyAudioRoute()
                     // ব্লুটুথ লাইন (SCO) তৈরি হতে সময় লাগে; আউটগোয়িং কলে প্রথমবারের সেট কাজ করে না, তাই একটু পরে আবার সেট
                     mainHandler.postDelayed({ if (core.currentCall != null) forceBluetoothSwitch() }, 400)
@@ -671,6 +716,7 @@ class SipEngine(private val context: Context) {
                     mainHandler.removeCallbacks(ringingWatchdog)
                     stopQualityPolling()
                     resetInviteTracking()
+                    stopAutoAnswerAudio()
                     if (core.callsNb <= 1) {
                         CallNetworkLock.release()
                         SipForegroundService.setCallActive(context, false)
