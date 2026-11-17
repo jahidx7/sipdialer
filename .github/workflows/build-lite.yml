@@ -49,7 +49,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          key_tag="noxsip-signing-key-v1"
+          key_tag="noxsip-signing-key-v2"
           keystore="$RUNNER_TEMP/noxsip-release.p12"
           encrypted="$RUNNER_TEMP/noxsip-signing-key.p12.enc"
 
@@ -140,4 +140,4 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --title "NoxSIP Lite ${APP_VERSION}" \
-            --notes "Improved background SIP reconnection and dialer navigation. Signed with the repository's persistent signing key for in-place updates of compatible Lite installs. Android power restrictions, network loss, or an unavailable SIP server can still interrupt service."
+            --notes "NoxSIP Lite 1.0.9 starts a new persistent signing key because the previous key was unavailable. Uninstall the old app before installing this build. Keep the ANDROID_SIGNING_PASSWORD secret unchanged and preserve the encrypted v2 key release; later updates can install in place."
