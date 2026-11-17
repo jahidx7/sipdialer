@@ -85,8 +85,8 @@ jobs:
           keytool -list -keystore "$keystore" -storetype PKCS12 \
             -storepass "$ANDROID_SIGNING_PASSWORD" -alias noxsip >/dev/null
           {
-            printf 'storeFile=%s\\n' "$keystore"
-            printf 'keyAlias=noxsip\\n'
+            printf 'storeFile=%s\n' "$keystore"
+            printf 'keyAlias=noxsip\n'
           } > keystore.properties
 
       - name: Build signed Lite APK
@@ -101,7 +101,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          app_version="$(awk -F '"' '/create\\("lite"\\)/ { in_lite=1; next } in_lite && /versionName[[:space:]]*=/ { print $2; exit }' app/build.gradle.kts)"
+          app_version="$(awk -F '"' '/create\("lite"\)/ { in_lite=1; next } in_lite && /versionName[[:space:]]*=/ { print $2; exit }' app/build.gradle.kts)"
           if [[ -z "$app_version" ]]; then
             echo "Could not read Lite versionName from app/build.gradle.kts" >&2
             exit 1
