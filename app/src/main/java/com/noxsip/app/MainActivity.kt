@@ -23,6 +23,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -391,68 +392,6 @@ fun SipDialerApp(
         Scaffold(
             containerColor = MaterialTheme.colorScheme.surface,
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
-            topBar = {
-                if (currentRoute != Screen.InCall.route) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(MaterialTheme.colorScheme.surface)
-                            .statusBarsPadding()
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 8.dp),
-                            horizontalArrangement = Arrangement.End,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            val pillColor = when (registrationState) {
-                                SipRegistrationState.REGISTERED -> com.noxsip.app.ui.theme.Green500
-                                SipRegistrationState.REGISTERING -> Amber500
-                                SipRegistrationState.ERROR -> MaterialTheme.colorScheme.error
-                                SipRegistrationState.UNREGISTERED -> MaterialTheme.colorScheme.outline
-                            }
-                            val pillLabel = when (registrationState) {
-                                SipRegistrationState.REGISTERED -> "Online"
-                                SipRegistrationState.REGISTERING -> if (registrationError != null) "Retrying" else "Connecting"
-                                SipRegistrationState.ERROR -> "Error"
-                                SipRegistrationState.UNREGISTERED -> "Offline"
-                            }
-                            Row(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(20.dp))
-                                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.76f))
-                                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(20.dp))
-                                    .clickable {
-                                        navController.navigate(Screen.Account.route) {
-                                            popUpTo(navController.graph.startDestinationId) {
-                                                saveState = true
-                                            }
-                                            launchSingleTop = true
-                                            restoreState = true
-                                        }
-                                    }
-                                    .padding(horizontal = 12.dp, vertical = 5.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(8.dp)
-                                        .clip(CircleShape)
-                                        .background(pillColor)
-                                )
-                                Text(
-                                    text = pillLabel,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                            }
-                        }
-                    }
-                }
-            },
         bottomBar = {
             // কিবোর্ড খোলা থাকলে নিচের মেনু লুকাই, যাতে মেসেজ বক্স কিবোর্ডের ঠিক ওপরে বসে
             val imeOpen = WindowInsets.ime.getBottom(androidx.compose.ui.platform.LocalDensity.current) > 0
@@ -512,7 +451,11 @@ fun SipDialerApp(
         NavHost(
             navController = navController,
             startDestination = Screen.Dialer.route,
-            modifier = Modifier.padding(paddingValues)
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .padding(top = 24.dp)
+                .padding(paddingValues)
         ) {
             composable(Screen.Dialer.route) {
                 DialerScreen(
@@ -690,6 +633,54 @@ fun SipDialerApp(
             }
         }
     }
+
+        // A small floating status pill keeps the full-height page layout; it no longer reserves
+        // a separate header strip above any screen.
+        val pillColor = when (registrationState) {
+            SipRegistrationState.REGISTERED -> com.noxsip.app.ui.theme.Green500
+            SipRegistrationState.REGISTERING -> Amber500
+            SipRegistrationState.ERROR -> MaterialTheme.colorScheme.error
+            SipRegistrationState.UNREGISTERED -> MaterialTheme.colorScheme.outline
+        }
+        val pillLabel = when (registrationState) {
+            SipRegistrationState.REGISTERED -> "Online"
+            SipRegistrationState.REGISTERING -> if (registrationError != null) "Retrying" else "Connecting"
+            SipRegistrationState.ERROR -> "Error"
+            SipRegistrationState.UNREGISTERED -> "Offline"
+        }
+        Row(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .statusBarsPadding()
+                .padding(top = 4.dp, end = 12.dp)
+                .shadow(6.dp, RoundedCornerShape(20.dp))
+                .clip(RoundedCornerShape(20.dp))
+                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.92f))
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(20.dp))
+                .clickable {
+                    navController.navigate(Screen.Account.route) {
+                        popUpTo(navController.graph.startDestinationId) { saveState = true }
+                        launchSingleTop = true
+                        restoreState = true
+                    }
+                }
+                .padding(horizontal = 12.dp, vertical = 5.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(8.dp)
+                    .clip(CircleShape)
+                    .background(pillColor)
+            )
+            Text(
+                text = pillLabel,
+                color = MaterialTheme.colorScheme.onSurface,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
 
         // Top Incoming Call Popup inside MainActivity if system overlay permission is not enabled
         val incomingState = callState as? SipCallState.Incoming

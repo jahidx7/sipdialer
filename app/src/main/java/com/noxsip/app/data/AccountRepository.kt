@@ -57,7 +57,8 @@ class AccountRepository(private val context: Context) {
                         enabled = o.optBoolean("enabled", true),
                         backupServer = o.optString("backupServer"),
                         backupPort = o.optInt("backupPort", 5060),
-                        backupTransport = o.optString("backupTransport", "UDP")
+                        backupTransport = o.optString("backupTransport", "UDP"),
+                        cellularTransport = o.optString("cellularTransport", "TCP")
                     )
                 }
             } catch (_: Exception) {
@@ -103,6 +104,7 @@ class AccountRepository(private val context: Context) {
                     .put("backupServer", a.backupServer)
                     .put("backupPort", a.backupPort)
                     .put("backupTransport", a.backupTransport)
+                    .put("cellularTransport", a.cellularTransport)
             )
         }
         return arr.toString()

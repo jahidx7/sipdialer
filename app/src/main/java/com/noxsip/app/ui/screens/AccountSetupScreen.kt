@@ -203,6 +203,7 @@ fun AccountSetupScreen(
     var domain by remember(formTarget) { mutableStateOf(formTarget?.domain ?: "") }
     var port by remember(formTarget) { mutableStateOf(formTarget?.port?.toString() ?: "5060") }
     var transport by remember(formTarget) { mutableStateOf(formTarget?.transport ?: "UDP") }
+    var cellularTransport by remember(formTarget) { mutableStateOf(formTarget?.cellularTransport ?: "TCP") }
     var proxy by remember(formTarget) { mutableStateOf(formTarget?.proxy ?: "") }
     var backupServer by remember(formTarget) { mutableStateOf(formTarget?.backupServer ?: "") }
     var backupPort by remember(formTarget) { mutableStateOf(formTarget?.backupPort?.toString() ?: "5060") }
@@ -1345,6 +1346,25 @@ fun AccountSetupScreen(
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text("Mobile data transport", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            listOf("UDP", "TCP").forEach { option ->
+                                FilterChip(
+                                    selected = cellularTransport.equals(option, ignoreCase = true),
+                                    onClick = { cellularTransport = option },
+                                    label = { Text(option, fontSize = 11.sp) }
+                                )
+                            }
+                        }
+                        Text(
+                            "TCP is selected for mobile data by default. The SIP server must listen on TCP at the configured port. STUN/ICE assists media routing; it cannot fix a SIP signaling timeout.",
+                            fontSize = 10.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             SlimInputField(
@@ -1467,7 +1487,8 @@ fun AccountSetupScreen(
                                 autoStart = autoStart,
                                 backupServer = backupServer.trim(),
                                 backupPort = backupPort.toIntOrNull() ?: 5060,
-                                backupTransport = backupTransport
+                                backupTransport = backupTransport,
+                                cellularTransport = cellularTransport
                             )
                             onSaveAndRegister(account)
                             showForm = false

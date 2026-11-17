@@ -172,6 +172,7 @@ class SipForegroundService : Service() {
 
     private var netCallback: ConnectivityManager.NetworkCallback? = null
     private var lastNetwork: Network? = null
+    private var lastIsCellular: Boolean? = null
     private var networkLost = false
     private val networkHandler = Handler(Looper.getMainLooper())
     private var noNetworkCheck: Runnable? = null
@@ -202,7 +203,14 @@ class SipForegroundService : Service() {
                     if (network == lastNetwork &&
                         networkCapabilities.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
                     ) {
-                        Log.d(TAG, "Current default network has INTERNET capability: $network")
+                        val isCellular = networkCapabilities.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR)
+                        if (lastIsCellular != isCellular) {
+                            lastIsCellular = isCellular
+                            Log.i(TAG, "Default network transport changed: ${if (isCellular) "mobile data" else "Wi-Fi/other"}")
+                            sipEngine.onNetworkChanged(isCellular)
+                        } else {
+                            Log.d(TAG, "Current default network has INTERNET capability: $network")
+                        }
                     }
                 }
 
@@ -226,9 +234,11 @@ class SipForegroundService : Service() {
                             ) {
                                 lastNetwork = current
                                 networkLost = false
+                                lastIsCellular = capabilities.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR)
                                 Log.i(TAG, "Found active default route after handover; restarting SIP")
-                                sipEngine.onNetworkChanged()
+                                sipEngine.onNetworkChanged(lastIsCellular)
                             } else {
+                                lastIsCellular = null
                                 Log.i(TAG, "No replacement internet route; pausing SIP until connectivity returns")
                                 sipEngine.onNetworkUnavailable()
                             }

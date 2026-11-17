@@ -19,5 +19,7 @@ data class SipAccountData(
     val enabled: Boolean = true, // false = স্থায়ীভাবে বন্ধ (কানেক্ট হয় না)
     val backupServer: String = "",
     val backupPort: Int = 5060,
-    val backupTransport: String = "UDP"
+    val backupTransport: String = "UDP",
+    /** Preferred SIP signaling transport while Android is using mobile data. */
+    val cellularTransport: String = "TCP"
 )

@@ -213,7 +213,7 @@ class SipDialerApplication : Application() {
         core = Factory.instance().createCore(null, null, this)
 
         try {
-            core.config.setInt("sip", "keepalive_period", 15000)
+            core.config.setInt("sip", "keepalive_period", 10000)
             core.config.setInt("sip", "use_rport", 1)
             core.config.setInt("sip", "contact_autorewrite", 1)
             core.config.setInt("sip", "guess_hostname", 1)

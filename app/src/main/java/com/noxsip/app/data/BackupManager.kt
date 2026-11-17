@@ -60,6 +60,7 @@ object BackupManager {
                             .put("displayName", a.displayName).put("autoStart", a.autoStart)
                             .put("backupServer", a.backupServer).put("backupPort", a.backupPort)
                             .put("backupTransport", a.backupTransport)
+                            .put("cellularTransport", a.cellularTransport)
                     )
                 }
             })
@@ -139,7 +140,8 @@ object BackupManager {
                             transport = o.optString("transport", "UDP"), proxy = o.optString("proxy"),
                             displayName = o.optString("displayName"), autoStart = o.optBoolean("autoStart", false),
                             backupServer = o.optString("backupServer"), backupPort = o.optInt("backupPort", 5060),
-                            backupTransport = o.optString("backupTransport", "UDP")
+                            backupTransport = o.optString("backupTransport", "UDP"),
+                            cellularTransport = o.optString("cellularTransport", "TCP")
                         )
                     )
                 }

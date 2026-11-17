@@ -62,6 +62,8 @@ class SipEngine(private val context: Context) {
     private val core: Core get() = SipDialerApplication.core
 
     private var networkAvailable = true
+    @Volatile private var cellularNetwork = false
+    private val configuredAccounts = mutableMapOf<String, SipAccountData>()
     private var pendingNetworkRecovery = false
     private var networkRecoveryTask: Runnable? = null
     private var networkRestartEventGraceUntil = 0L
@@ -77,12 +79,22 @@ class SipEngine(private val context: Context) {
     }
 
     /** Rebuild Linphone signaling channels on the new Android default-network route. */
-    fun onNetworkChanged() {
+    fun onNetworkChanged(isCellular: Boolean? = null) {
         mainHandler.post {
+            if (isCellular != null && cellularNetwork != isCellular) {
+                cellularNetwork = isCellular
+                Log.i(TAG, "Default route is ${if (isCellular) "mobile data" else "Wi-Fi/other"}; selecting the configured route transport")
+            }
             networkAvailable = true
             pendingNetworkRecovery = true
             scheduleNetworkRecovery()
         }
+    }
+
+    private fun preferredTransport(account: SipAccountData, useBackup: Boolean): String = when {
+        useBackup -> account.backupTransport.ifBlank { "UDP" }
+        cellularNetwork -> account.cellularTransport.ifBlank { "TCP" }
+        else -> account.transport.ifBlank { "UDP" }
     }
 
     /** Tell Linphone to close stale SIP/NAT sockets while Android has no default internet route. */
@@ -150,7 +162,17 @@ class SipEngine(private val context: Context) {
                         pendingNetworkRecovery = false
                         networkRestartEventGraceUntil = SystemClock.elapsedRealtime() + NETWORK_RESTART_EVENT_GRACE_MS
                         ids.forEach { id ->
-                            if (registeredData.containsKey(id)) armRegistrationTimeout(id)
+                            val active = registeredData[id] ?: return@forEach
+                            val configured = configuredAccounts[id] ?: active
+                            val usingBackup = id in backupActive
+                            val targetTransport = preferredTransport(configured, usingBackup)
+                            if (!active.transport.equals(targetTransport, ignoreCase = true)) {
+                                val accountForRoute = configured.copy(transport = targetTransport)
+                                Log.i(TAG, "Re-registering $id over $targetTransport after route change")
+                                registerOnEndpoint(accountForRoute, select = currentAccount?.id == id, useBackup = usingBackup)
+                            } else {
+                                armRegistrationTimeout(id)
+                            }
                         }
                         Log.i(TAG, "SIP signaling restarted for ${ids.size} account(s) after network handover")
                     } catch (e: Exception) {
@@ -547,7 +569,7 @@ class SipEngine(private val context: Context) {
 
     /** Move the same SIP identity to the configured backup after a temporary primary failure. */
     private fun switchToBackupAfterFailure(id: String, message: String): Boolean {
-        val data = registeredData[id] ?: return false
+        val data = configuredAccounts[id] ?: registeredData[id] ?: return false
         if (data.backupServer.isBlank() || id in backupActive) return false
         Log.w(TAG, "Primary SIP endpoint failed for $id; switching to configured backup")
         registrationRetries.remove(id)?.let { mainHandler.removeCallbacks(it) }
@@ -562,14 +584,19 @@ class SipEngine(private val context: Context) {
 
     private fun switchEndpoint(id: String, useBackup: Boolean) {
         if ((id in backupActive) == useBackup) return
-        val data = registeredData[id] ?: return
+        val data = configuredAccounts[id] ?: registeredData[id] ?: return
         primaryProbeTasks.remove(id)?.let { mainHandler.removeCallbacks(it) }
         registrationRetries.remove(id)?.let { mainHandler.removeCallbacks(it) }
         registrationRetryAttempts.remove(id)
         regTimeouts.remove(id)?.let { mainHandler.removeCallbacks(it) }
         registeredData.remove(id)
         removeLinphoneAccount(id)
-        registerOnEndpoint(data, select = currentAccount?.id == id, useBackup = useBackup)
+        val routeAccount = if (useBackup) {
+            data.copy(transport = data.backupTransport.ifBlank { "UDP" })
+        } else {
+            data.copy(transport = preferredTransport(data, useBackup = false))
+        }
+        registerOnEndpoint(routeAccount, select = currentAccount?.id == id, useBackup = useBackup)
     }
 
     private fun schedulePrimaryProbe(id: String) {
@@ -1118,13 +1145,16 @@ class SipEngine(private val context: Context) {
      * একটি SIP অ্যাকাউন্ট রেজিস্টার করুন। অন্য অ্যাকাউন্টের রেজিস্ট্রেশন অক্ষত থাকে।
      * select = true হলে এটি নির্বাচিত (আউটগোয়িং কলের) অ্যাকাউন্ট হয়।
      */
-    fun register(account: SipAccountData, select: Boolean = true) =
-        registerOnEndpoint(account, select, useBackup = false)
+    fun register(account: SipAccountData, select: Boolean = true) {
+        configuredAccounts[account.id] = account
+        val effective = account.copy(transport = preferredTransport(account, useBackup = false))
+        registerOnEndpoint(effective, select, useBackup = false)
+    }
 
     private fun registerOnEndpoint(account: SipAccountData, select: Boolean, useBackup: Boolean) {
         val id = account.id
         if (useBackup && account.backupServer.isBlank()) return
-        if (select) currentAccount = account
+        if (select) currentAccount = configuredAccounts[id] ?: account
         val st = _accountStates.value[id]
         if (registeredData[id] == account &&
             ((id in backupActive) == useBackup) &&
@@ -1176,7 +1206,7 @@ class SipEngine(private val context: Context) {
             core.incTimeout = 35
 
             try {
-                core.config.setInt("sip", "keepalive_period", 15000)
+                core.config.setInt("sip", "keepalive_period", 10000)
                 core.config.setInt("sip", "use_rport", 1)
                 core.config.setInt("sip", "contact_autorewrite", 1)
                 core.config.setInt("sip", "guess_hostname", 1)
@@ -1266,8 +1296,11 @@ class SipEngine(private val context: Context) {
             accountParams.setRoutesAddresses(arrayOf(serverAddr))
 
             val natPolicy = core.createNatPolicy().apply {
-                isStunEnabled = false
-                isIceEnabled = false
+                // STUN discovers a server-reflexive media candidate; ICE uses it during SDP
+                // negotiation. SIP signaling still requires a reachable PBX transport.
+                stunServer = "stun.l.google.com:19302"
+                isStunEnabled = true
+                isIceEnabled = true
                 isTurnEnabled = false
                 isUpnpEnabled = false
             }
@@ -1306,6 +1339,7 @@ class SipEngine(private val context: Context) {
         authChallenges.remove(id)
         stoppedByError.remove(id)
         registeredData.remove(id)
+        configuredAccounts.remove(id)
         removeLinphoneAccount(id)
         _accountStates.value = _accountStates.value - id
         _accountErrors.value = _accountErrors.value - id
