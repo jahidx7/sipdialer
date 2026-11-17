@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.noxsip.app.data.models.CallRecord
 import com.noxsip.app.ui.theme.Green500
+import com.noxsip.app.ui.theme.Indigo600
 import com.noxsip.app.ui.theme.Red500
 import com.noxsip.app.util.DeviceContact
 import com.noxsip.app.util.RecordingStorage

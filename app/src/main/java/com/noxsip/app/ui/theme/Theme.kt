@@ -82,8 +82,8 @@ fun SipDialerTheme(
         SideEffect {
             val window = (view.context as Activity).window
             // Edge-to-edge bars let the current screen and Android's system UI share the same theme.
-            window.statusBarColor = Color.TRANSPARENT.toArgb()
-            window.navigationBarColor = Color.TRANSPARENT.toArgb()
+            window.statusBarColor = Color.Transparent.toArgb()
+            window.navigationBarColor = Color.Transparent.toArgb()
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 window.isStatusBarContrastEnforced = false
                 window.isNavigationBarContrastEnforced = false
