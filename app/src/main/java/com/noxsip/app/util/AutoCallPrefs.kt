@@ -87,16 +87,18 @@ object AutoCallPrefs {
     }
 
     /** Duration of the normalized 44-byte PCM WAV used by the SIP call player. */
-    fun voiceDurationMs(path: String): Long? = try {
-        val file = File(path)
-        if (!file.isFile || file.length() <= 44L) return null
-        val header = ByteArray(44)
-        file.inputStream().use { input -> if (input.read(header) != header.size) return null }
-        val byteRate = littleEndianInt(header, 28).toLong() and 0xffffffffL
-        val pcmBytes = (file.length() - 44L).coerceAtLeast(0L)
-        if (byteRate <= 0L || pcmBytes <= 0L) null else (pcmBytes * 1000L / byteRate).coerceAtLeast(500L)
-    } catch (_: Exception) {
-        null
+    fun voiceDurationMs(path: String): Long? {
+        return try {
+            val file = File(path)
+            if (!file.isFile || file.length() <= 44L) return null
+            val header = ByteArray(44)
+            file.inputStream().use { input -> if (input.read(header) != header.size) return null }
+            val byteRate = littleEndianInt(header, 28).toLong() and 0xffffffffL
+            val pcmBytes = (file.length() - 44L).coerceAtLeast(0L)
+            if (byteRate <= 0L || pcmBytes <= 0L) null else (pcmBytes * 1000L / byteRate).coerceAtLeast(500L)
+        } catch (_: Exception) {
+            null
+        }
     }
 
     private fun parseDelimited(text: String): String = buildString {
