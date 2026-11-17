@@ -18,6 +18,7 @@ import com.noxsip.app.util.CallRinger
 import com.noxsip.app.util.AutoAnswerPrefs
 import com.noxsip.app.util.RecordingStorage
 import com.noxsip.app.util.NotificationHelper
+import com.noxsip.app.util.SipConnectionDiagnostics
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -44,6 +45,7 @@ class SipEngine(private val context: Context) {
         private const val REGISTRATION_TIMEOUT_MS = 20_000L
         private const val RETRY_BASE_DELAY_MS = 3_000L
         private const val RETRY_MAX_DELAY_MS = 60_000L
+        private const val PRIMARY_SERVER_PROBE_MS = 5 * 60_000L
 
         @Volatile
         private var INSTANCE: SipEngine? = null
@@ -64,6 +66,15 @@ class SipEngine(private val context: Context) {
                 if (core.callsNb == 0 && core.accountList.isNotEmpty()) core.refreshRegisters()
             } catch (_: Exception) {
             }
+        }
+    }
+
+    /** On a Wi-Fi/mobile network change, probe the primary endpoint again if using backup. */
+    fun onNetworkChanged() {
+        mainHandler.post {
+            val backups = backupActive.toList()
+            if (backups.isEmpty()) keepAliveTick()
+            else backups.forEach { switchEndpoint(it, useBackup = false) }
         }
     }
 
@@ -161,6 +172,8 @@ class SipEngine(private val context: Context) {
     private val regTimeouts = HashMap<String, Runnable>()
     private val registrationRetries = HashMap<String, Runnable>()
     private val registrationRetryAttempts = HashMap<String, Int>()
+    private val backupActive = HashSet<String>()
+    private val primaryProbeTasks = HashMap<String, Runnable>()
 
     private fun cleanUser(a: SipAccountData) = a.username.trim().substringBefore("@")
     private fun cleanDomain(a: SipAccountData) = parseHostAndPort(a.domain, a.port).first
@@ -359,8 +372,9 @@ class SipEngine(private val context: Context) {
     private fun makeRegistrationTimeout(id: String): Runnable = Runnable {
         if (_accountStates.value[id] == SipRegistrationState.REGISTERING) {
             val data = registeredData[id] ?: return@Runnable
-            val transport = data.transport
-            val port = parseHostAndPort(data.proxy.ifBlank { data.domain }, data.port).second
+            val route = SipConnectionDiagnostics.snapshot(context, id)
+            val transport = route.transport
+            val port = route.port
             scheduleRegistrationRetry(
                 id,
                 "No response from SIP server ($transport port $port). Retrying automatically; check the Domain/IP, port, and internet if this continues."
@@ -374,6 +388,8 @@ class SipEngine(private val context: Context) {
      */
     private fun scheduleRegistrationRetry(id: String, message: String) {
         if (!registeredData.containsKey(id) || id in stoppedByError) return
+        SipConnectionDiagnostics.failed(context, id, message)
+        if (switchToBackupAfterFailure(id, message)) return
         regTimeouts.remove(id)?.let { mainHandler.removeCallbacks(it) }
         _accountErrors.value = _accountErrors.value + (id to message)
         _accountStates.value = _accountStates.value + (id to SipRegistrationState.REGISTERING)
@@ -393,9 +409,10 @@ class SipEngine(private val context: Context) {
             try {
                 val account = core.getAccountByIdkey(id)
                 if (account == null) {
-                    register(data, select = currentAccount?.id == id)
+                    registerOnEndpoint(data, select = currentAccount?.id == id, useBackup = id in backupActive)
                     return@Runnable
                 }
+                SipConnectionDiagnostics.attempted(context, id)
                 val params = account.params.clone()
                 params.isRegisterEnabled = true
                 account.params = params
@@ -408,11 +425,52 @@ class SipEngine(private val context: Context) {
             }
         }
         registrationRetries[id] = retry
+        SipConnectionDiagnostics.retryScheduled(context, id, System.currentTimeMillis() + delayMs, attempt)
         Log.i(TAG, "SIP registration retry $attempt for $id in ${delayMs}ms")
         mainHandler.postDelayed(retry, delayMs)
     }
 
+    /** Move the same SIP identity to the configured backup after a temporary primary failure. */
+    private fun switchToBackupAfterFailure(id: String, message: String): Boolean {
+        val data = registeredData[id] ?: return false
+        if (data.backupServer.isBlank() || id in backupActive) return false
+        Log.w(TAG, "Primary SIP endpoint failed for $id; switching to configured backup")
+        registrationRetries.remove(id)?.let { mainHandler.removeCallbacks(it) }
+        registrationRetryAttempts.remove(id)
+        regTimeouts.remove(id)?.let { mainHandler.removeCallbacks(it) }
+        registeredData.remove(id)
+        removeLinphoneAccount(id)
+        registerOnEndpoint(data, select = currentAccount?.id == id, useBackup = true)
+        setAccState(id, SipRegistrationState.REGISTERING, error = "Primary unavailable; trying backup server. $message")
+        return true
+    }
+
+    private fun switchEndpoint(id: String, useBackup: Boolean) {
+        if ((id in backupActive) == useBackup) return
+        val data = registeredData[id] ?: return
+        primaryProbeTasks.remove(id)?.let { mainHandler.removeCallbacks(it) }
+        registrationRetries.remove(id)?.let { mainHandler.removeCallbacks(it) }
+        registrationRetryAttempts.remove(id)
+        regTimeouts.remove(id)?.let { mainHandler.removeCallbacks(it) }
+        registeredData.remove(id)
+        removeLinphoneAccount(id)
+        registerOnEndpoint(data, select = currentAccount?.id == id, useBackup = useBackup)
+    }
+
+    private fun schedulePrimaryProbe(id: String) {
+        primaryProbeTasks.remove(id)?.let { mainHandler.removeCallbacks(it) }
+        val task = Runnable {
+            if (id in backupActive && registeredData.containsKey(id)) {
+                Log.i(TAG, "Probing primary SIP endpoint for $id")
+                switchEndpoint(id, useBackup = false)
+            }
+        }
+        primaryProbeTasks[id] = task
+        mainHandler.postDelayed(task, PRIMARY_SERVER_PROBE_MS)
+    }
+
     private fun stopWithError(id: String, message: String) {
+        SipConnectionDiagnostics.failed(context, id, message)
         stoppedByError.add(id)
         registrationRetries.remove(id)?.let { mainHandler.removeCallbacks(it) }
         registrationRetryAttempts.remove(id)
@@ -572,7 +630,10 @@ class SipEngine(private val context: Context) {
                     failureCounts[id] = 0
                     authChallenges[id] = 0
                     stoppedByError.remove(id)
+                    SipConnectionDiagnostics.registered(context, id)
                     setAccState(id, SipRegistrationState.REGISTERED, clearError = true)
+                    if (id in backupActive) schedulePrimaryProbe(id)
+                    else primaryProbeTasks.remove(id)?.let { mainHandler.removeCallbacks(it) }
                 }
                 RegistrationState.Progress -> {
                     if (id !in stoppedByError && registeredData.containsKey(id)) {
@@ -587,6 +648,7 @@ class SipEngine(private val context: Context) {
                     val n = (failureCounts[id] ?: 0) + 1
                     failureCounts[id] = n
                     val (msg, fatal) = describeFailure(errorInfo, reason, message)
+                    SipConnectionDiagnostics.failed(context, id, msg)
                     Log.w(TAG, "Registration failed [$id] (#$n, fatal=$fatal): $msg")
                     if (fatal) {
                         mainHandler.post { stopWithError(id, msg) }
@@ -774,6 +836,7 @@ class SipEngine(private val context: Context) {
                 }
                 Call.State.End, Call.State.Error, Call.State.Released -> {
                     mainHandler.removeCallbacks(ringingWatchdog)
+                    val callQualityForRecord = _callQuality.value
                     stopQualityPolling()
                     resetInviteTracking()
                     stopAutoAnswerAudio()
@@ -838,7 +901,12 @@ class SipEngine(private val context: Context) {
                                         isAnswered = wasAnswered,
                                         duration = if (wasAnswered) durationSec else 0,
                                         recordingPath = validRecPath,
-                                        accountUser = accountUserForRecord
+                                        accountUser = accountUserForRecord,
+                                        codec = callQualityForRecord?.codec.orEmpty(),
+                                        qualityRating = callQualityForRecord?.rating ?: -1f,
+                                        jitterMs = callQualityForRecord?.jitterMs ?: 0,
+                                        lossPercent = callQualityForRecord?.lossPercent ?: 0f,
+                                        rttMs = callQualityForRecord?.rttMs ?: 0
                                     )
                                 )
                             } catch (e: Exception) {
@@ -909,11 +977,16 @@ class SipEngine(private val context: Context) {
      * একটি SIP অ্যাকাউন্ট রেজিস্টার করুন। অন্য অ্যাকাউন্টের রেজিস্ট্রেশন অক্ষত থাকে।
      * select = true হলে এটি নির্বাচিত (আউটগোয়িং কলের) অ্যাকাউন্ট হয়।
      */
-    fun register(account: SipAccountData, select: Boolean = true) {
+    fun register(account: SipAccountData, select: Boolean = true) =
+        registerOnEndpoint(account, select, useBackup = false)
+
+    private fun registerOnEndpoint(account: SipAccountData, select: Boolean, useBackup: Boolean) {
         val id = account.id
+        if (useBackup && account.backupServer.isBlank()) return
         if (select) currentAccount = account
         val st = _accountStates.value[id]
         if (registeredData[id] == account &&
+            ((id in backupActive) == useBackup) &&
             (st == SipRegistrationState.REGISTERED || st == SipRegistrationState.REGISTERING)
         ) {
             Log.d(TAG, "Account $id already registering/registered, skipping")
@@ -923,6 +996,9 @@ class SipEngine(private val context: Context) {
             publishSelected()
             return
         }
+
+        if (useBackup) backupActive.add(id) else backupActive.remove(id)
+        primaryProbeTasks.remove(id)?.let { mainHandler.removeCallbacks(it) }
 
         // শুধু এই অ্যাকাউন্টের আগের অবস্থা সাফ
         registrationRetries.remove(id)?.let { mainHandler.removeCallbacks(it) }
@@ -979,11 +1055,10 @@ class SipEngine(private val context: Context) {
 
             val cleanUsername = cleanUser(account)
             val (cleanDomain, extractedDomainPort) = parseHostAndPort(account.domain, account.port)
-            val (cleanServerHost, effectivePort) = if (account.proxy.isNotBlank()) {
-                parseHostAndPort(account.proxy, extractedDomainPort)
-            } else {
-                cleanDomain to extractedDomainPort
-            }
+            val usingBackup = id in backupActive
+            val serverInput = if (usingBackup) account.backupServer else account.proxy.ifBlank { account.domain }
+            val serverDefaultPort = if (usingBackup) account.backupPort else extractedDomainPort
+            val (cleanServerHost, effectivePort) = parseHostAndPort(serverInput, serverDefaultPort)
 
             if (cleanUsername.isEmpty() || cleanDomain.isEmpty()) {
                 setAccState(id, SipRegistrationState.ERROR, error = "Please enter a valid username and domain.")
@@ -1013,7 +1088,8 @@ class SipEngine(private val context: Context) {
             core.addAuthInfo(wildcardAuth)
             authInfos[id] = mutableListOf(domainAuth, wildcardAuth)
 
-            val transportType = when (account.transport.uppercase()) {
+            val selectedTransport = if (usingBackup) account.backupTransport else account.transport
+            val transportType = when (selectedTransport.uppercase()) {
                 "TCP" -> TransportType.Tcp
                 "TLS" -> TransportType.Tls
                 else -> TransportType.Udp
@@ -1058,6 +1134,8 @@ class SipEngine(private val context: Context) {
 
             val linphoneAccount = core.createAccount(accountParams)
             registeredData[id] = account
+            SipConnectionDiagnostics.endpoint(context, id, cleanServerHost, effectivePort, selectedTransport, usingBackup)
+            SipConnectionDiagnostics.attempted(context, id)
             core.addAccount(linphoneAccount)
             if (select || core.defaultAccount == null) {
                 core.defaultAccount = linphoneAccount
@@ -1067,7 +1145,7 @@ class SipEngine(private val context: Context) {
             armRegistrationTimeout(id)
             Log.i(
                 TAG,
-                "SIP registration started: id=$id user=$cleanUsername, domain=$cleanDomain, server=$cleanServerHost:$effectivePort, transport=$transportType"
+                "SIP registration started: id=$id user=$cleanUsername, domain=$cleanDomain, server=$cleanServerHost:$effectivePort, transport=$transportType, backup=$usingBackup"
             )
 
         } catch (e: Exception) {
@@ -1078,6 +1156,8 @@ class SipEngine(private val context: Context) {
 
     /** শুধু একটি অ্যাকাউন্ট আনরেজিস্টার করে; বাকিগুলো চালু থাকে */
     fun unregisterAccount(id: String) {
+        primaryProbeTasks.remove(id)?.let { mainHandler.removeCallbacks(it) }
+        backupActive.remove(id)
         registrationRetries.remove(id)?.let { mainHandler.removeCallbacks(it) }
         registrationRetryAttempts.remove(id)
         regTimeouts.remove(id)?.let { mainHandler.removeCallbacks(it) }

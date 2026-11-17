@@ -204,11 +204,14 @@ fun AccountSetupScreen(
     var port by remember(formTarget) { mutableStateOf(formTarget?.port?.toString() ?: "5060") }
     var transport by remember(formTarget) { mutableStateOf(formTarget?.transport ?: "UDP") }
     var proxy by remember(formTarget) { mutableStateOf(formTarget?.proxy ?: "") }
+    var backupServer by remember(formTarget) { mutableStateOf(formTarget?.backupServer ?: "") }
+    var backupPort by remember(formTarget) { mutableStateOf(formTarget?.backupPort?.toString() ?: "5060") }
+    var backupTransport by remember(formTarget) { mutableStateOf(formTarget?.backupTransport ?: "UDP") }
     var displayName by remember(formTarget) { mutableStateOf(formTarget?.displayName ?: "") }
     var autoStart by remember(formTarget) { mutableStateOf(formTarget?.autoStart ?: false) }
     var passwordVisible by remember { mutableStateOf(false) }
     var showAdvanced by remember { mutableStateOf(false) }
-    // -1 = settings home list, 0 = SIP Account, 1 = Audio & Codec, 2 = Dialer & Permission, 3 = User Account, 4 = Power Mode
+    // -1 = settings home list, 0 = SIP Account, 1 = Audio & Codec, 2 = Dialer & Permission, 3 = User Account, 4 = Power Mode, 7 = Connection Health
     var settingsTab by rememberSaveable { mutableIntStateOf(-1) }
 
     val transportOptions = listOf("UDP", "TCP", "TLS")
@@ -359,6 +362,7 @@ fun AccountSetupScreen(
             }
             SettingsRow(Icons.Filled.PhoneInTalk, "Dialer & Permission", "Phone dialer integration", Color(0xFF16A34A)) { settingsTab = 2 }
             SettingsRow(Icons.Filled.BatteryChargingFull, "Power Mode", "Battery mode", Color(0xFFEA8A00)) { settingsTab = 4 }
+            SettingsRow(Icons.Filled.MonitorHeart, "Connection Health", "SIP status, retries and failover", Color(0xFF0F766E)) { settingsTab = 7 }
             SettingsRow(Icons.Filled.Block, "Blocked numbers", "Calls from these numbers are rejected", Color(0xFFDC2626)) { settingsTab = 5 }
             SettingsRow(Icons.Filled.ManageAccounts, "User Account", backupSubtitle, Color(0xFFDB2777)) { settingsTab = 3 }
             SettingsRow(Icons.Filled.SystemUpdate, "App Update", "Check for a new version", Color(0xFF0EA5E9)) { settingsTab = 6 }
@@ -372,6 +376,7 @@ fun AccountSetupScreen(
                 4 -> "Power Mode"
                 5 -> "Blocked numbers"
                 6 -> "App Update"
+                7 -> "Connection Health"
                 else -> "User Account"
             }
             Row(
@@ -391,6 +396,7 @@ fun AccountSetupScreen(
                     4 -> Icons.Filled.BatteryChargingFull to Color(0xFFEA8A00)
                     5 -> Icons.Filled.Block to Color(0xFFDC2626)
                     6 -> Icons.Filled.SystemUpdate to Color(0xFF0EA5E9)
+                    7 -> Icons.Filled.MonitorHeart to Color(0xFF0F766E)
                     else -> Icons.Filled.ManageAccounts to Color(0xFFDB2777)
                 }
                 androidx.compose.foundation.layout.Box(
@@ -1051,6 +1057,14 @@ fun AccountSetupScreen(
                 modifier = Modifier.padding(8.dp)
             )
         }
+        if (settingsTab == 7) {
+            ConnectionHealthCard(
+                currentAccount = currentAccount,
+                registrationState = registrationState,
+                registrationError = registrationError,
+                onRetry = { currentAccount?.let(onSaveAndRegister) }
+            )
+        }
 
         if (settingsTab == 0 && showForm) androidx.compose.ui.window.Dialog(
             onDismissRequest = { showForm = false },
@@ -1281,7 +1295,7 @@ fun AccountSetupScreen(
                         modifier = Modifier.heightIn(min = 30.dp)
                     ) {
                         Text(
-                            text = if (showAdvanced) "Hide Advanced ▲" else "Proxy / Name ▼",
+                            text = if (showAdvanced) "Hide Advanced ▲" else "Advanced ▼",
                             fontSize = 11.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = Indigo600
@@ -1289,28 +1303,70 @@ fun AccountSetupScreen(
                     }
                 }
 
-                // Collapsible Advanced Fields (Display Name & Outbound Proxy)
+                // Collapsible Advanced Fields (proxy plus optional SIP endpoint failover)
                 AnimatedVisibility(visible = showAdvanced) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        SlimInputField(
-                            value = displayName,
-                            onValueChange = { displayName = it },
-                            label = "Display Name",
-                            placeholder = "Optional",
-                            enabled = !formLocked,
-                            modifier = Modifier.weight(1f)
-                        )
-
-                        SlimInputField(
-                            value = proxy,
-                            onValueChange = { proxy = it },
-                            label = "Outbound Proxy",
-                            placeholder = "Optional",
-                            enabled = !formLocked,
-                            modifier = Modifier.weight(1f)
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            SlimInputField(
+                                value = displayName,
+                                onValueChange = { displayName = it },
+                                label = "Display Name",
+                                placeholder = "Optional",
+                                enabled = !formLocked,
+                                modifier = Modifier.weight(1f)
+                            )
+                            SlimInputField(
+                                value = proxy,
+                                onValueChange = { proxy = it },
+                                label = "Outbound Proxy",
+                                placeholder = "Optional",
+                                enabled = !formLocked,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            SlimInputField(
+                                value = backupServer,
+                                onValueChange = { backupServer = it },
+                                label = "Backup SIP Server (optional)",
+                                placeholder = "backup.example.com",
+                                enabled = !formLocked,
+                                modifier = Modifier.weight(1.7f)
+                            )
+                            SlimInputField(
+                                value = backupPort,
+                                onValueChange = { backupPort = it.filter(Char::isDigit) },
+                                label = "Port",
+                                placeholder = "5060",
+                                keyboardType = KeyboardType.Number,
+                                enabled = !formLocked,
+                                modifier = Modifier.weight(0.8f)
+                            )
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text("Backup transport", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            listOf("UDP", "TCP", "TLS").forEach { option ->
+                                FilterChip(
+                                    selected = backupTransport.equals(option, ignoreCase = true),
+                                    onClick = { backupTransport = option },
+                                    label = { Text(option, fontSize = 11.sp) }
+                                )
+                            }
+                        }
+                        Text(
+                            "The backup must serve this same SIP account. The app switches to it after a temporary primary-server failure and periodically checks the primary again.",
+                            fontSize = 10.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
@@ -1371,7 +1427,10 @@ fun AccountSetupScreen(
                                 transport = transport,
                                 proxy = proxy.trim(),
                                 displayName = displayName.trim(),
-                                autoStart = autoStart
+                                autoStart = autoStart,
+                                backupServer = backupServer.trim(),
+                                backupPort = backupPort.toIntOrNull() ?: 5060,
+                                backupTransport = backupTransport
                             )
                             onSaveAndRegister(account)
                             showForm = false

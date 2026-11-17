@@ -30,6 +30,8 @@ import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Dialpad
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.StarOutline
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -53,6 +55,7 @@ import com.noxsip.app.ui.components.DialPad
 import com.noxsip.app.ui.theme.Green500
 import com.noxsip.app.ui.theme.Indigo600
 import com.noxsip.app.util.DeviceContact
+import com.noxsip.app.util.FavoriteNumbers
 
 /** পেস্ট করা নম্বরের বাংলা (০-৯), আরবি-ভারতীয় ইত্যাদি যেকোনো ইউনিকোড অঙ্ক ইংরেজি 0-9 করে; শুধু অঙ্ক + * # রাখে */
 internal fun normalizeDialInput(raw: String): String {
@@ -130,6 +133,7 @@ fun DialerScreen(
     val clipboardManager = LocalClipboardManager.current
     // Beta: SIM কল (Telecom দিয়ে); জরুরি নম্বর সবসময় সরাসরি SIM/Telecom দিয়ে, SIP-এ নয়
     val ctx = androidx.compose.ui.platform.LocalContext.current
+    var favoriteNumbers by remember(ctx) { mutableStateOf(FavoriteNumbers.get(ctx)) }
     val sims = remember { com.noxsip.app.telecom.TelecomHelper.getAvailableSimAccounts(ctx) }
     var dialCodeMsg by remember { mutableStateOf<String?>(null) }
     var showCallChooser by remember { mutableStateOf(false) }
@@ -521,7 +525,7 @@ fun DialerScreen(
                 }
             } else if (phoneNumber.isNotEmpty() || searchQuery.isNotBlank()) {
                 // কোনো কন্টাক্ট মেলেনি: ফাঁকা (নম্বর কীপ্যাডের উপরের বক্সে দেখায়)
-            } else if (phoneNumber.isEmpty() && recentCalls.isNotEmpty()) {
+            } else if (phoneNumber.isEmpty() && (recentCalls.isNotEmpty() || favoriteNumbers.isNotEmpty())) {
                 val recents = remember(recentCalls, filterTab, sourceTab) {
                     recentCalls
                         .filter {
@@ -542,6 +546,37 @@ fun DialerScreen(
                         .take(300)
                 }
                 Column(modifier = Modifier.fillMaxSize()) {
+                    if (favoriteNumbers.isNotEmpty()) {
+                        Text(
+                            "Speed dial",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.padding(top = 4.dp, bottom = 2.dp)
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(bottom = 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            favoriteNumbers.take(10).forEach { favorite ->
+                                val label = nameByTail[favorite.filter(Char::isDigit).takeLast(10)] ?: favorite
+                                Surface(
+                                    shape = RoundedCornerShape(18.dp),
+                                    color = MaterialTheme.colorScheme.primaryContainer,
+                                    modifier = Modifier.clickable { onCall(favorite) }
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Icon(Icons.Filled.Call, contentDescription = null, tint = Green500, modifier = Modifier.size(16.dp))
+                                        Text(label, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    }
+                                }
+                            }
+                        }
+                    }
                     // All | Missed ফিল্টার
                     Row(
                         modifier = Modifier
@@ -645,6 +680,11 @@ fun DialerScreen(
                                         group = g,
                                         nameByTail = nameByTail,
                                         blocked = blocked,
+                                        isFavorite = favoriteNumbers.any { FavoriteNumbers.normalize(it) == FavoriteNumbers.normalize(g.number) },
+                                        onToggleFavorite = {
+                                            FavoriteNumbers.toggle(ctx, g.number)
+                                            favoriteNumbers = FavoriteNumbers.get(ctx)
+                                        },
                                         // ট্যাপ করলে কল যায় না: নম্বর ডায়ালপ্যাডে লোড হয়
                                         onClick = {
                                             if (openSwipeKey != null) openSwipeKey = null
@@ -961,6 +1001,8 @@ private fun CallGroupRow(
     group: CallGroup,
     nameByTail: Map<String, String>,
     blocked: Boolean,
+    isFavorite: Boolean,
+    onToggleFavorite: () -> Unit,
     onClick: () -> Unit,
     onDetails: () -> Unit
 ) {
@@ -1025,6 +1067,14 @@ private fun CallGroupRow(
                     overflow = TextOverflow.Ellipsis
                 )
             }
+        }
+        IconButton(onClick = onToggleFavorite, modifier = Modifier.size(34.dp)) {
+            Icon(
+                if (isFavorite) Icons.Filled.Star else Icons.Filled.StarOutline,
+                contentDescription = if (isFavorite) "Remove speed dial favorite" else "Add to speed dial",
+                tint = if (isFavorite) Color(0xFFF59E0B) else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(19.dp)
+            )
         }
         Text(
             text = shortTime(latest.timestamp),

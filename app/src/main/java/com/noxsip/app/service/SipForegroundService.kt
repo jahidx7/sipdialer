@@ -180,7 +180,7 @@ class SipForegroundService : Service() {
                     val changed = lastNetwork != null && lastNetwork != network
                     if (changed || networkLost) {
                         Log.i(TAG, "Network changed/restored, refreshing registration")
-                        sipEngine.keepAliveTick()
+                        sipEngine.onNetworkChanged()
                     }
                     lastNetwork = network
                     networkLost = false

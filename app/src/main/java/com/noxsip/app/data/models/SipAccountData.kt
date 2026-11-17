@@ -16,5 +16,8 @@ data class SipAccountData(
     val proxy: String = "",
     val displayName: String = "",
     val autoStart: Boolean = false,
-    val enabled: Boolean = true // false = স্থায়ীভাবে বন্ধ (কানেক্ট হয় না)
+    val enabled: Boolean = true, // false = স্থায়ীভাবে বন্ধ (কানেক্ট হয় না)
+    val backupServer: String = "",
+    val backupPort: Int = 5060,
+    val backupTransport: String = "UDP"
 )

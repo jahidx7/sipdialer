@@ -140,4 +140,4 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --title "NoxSIP Lite ${APP_VERSION}" \
-            --notes "NoxSIP Lite 1.0.9 starts a new persistent signing key because the previous key was unavailable. Uninstall the old app before installing this build. Keep the ANDROID_SIGNING_PASSWORD secret unchanged and preserve the encrypted v2 key release; later updates can install in place."
+            --notes "NoxSIP Lite 1.1.0 adds optional primary/backup SIP endpoint failover, Connection Health diagnostics, and saved call-quality summaries. This build uses the same persistent v2 signing key and package as 1.0.9, so it can install as an in-place update. Keep the ANDROID_SIGNING_PASSWORD secret and encrypted v2 signing-key release unchanged. SIP push requires separate RFC 8599 and FCM push-gateway configuration on the SIP server."

@@ -58,6 +58,8 @@ object BackupManager {
                             .put("domain", a.domain).put("port", a.port)
                             .put("transport", a.transport).put("proxy", a.proxy)
                             .put("displayName", a.displayName).put("autoStart", a.autoStart)
+                            .put("backupServer", a.backupServer).put("backupPort", a.backupPort)
+                            .put("backupTransport", a.backupTransport)
                     )
                 }
             })
@@ -68,6 +70,8 @@ object BackupManager {
                             .put("a", c.remoteAddress).put("n", c.displayName)
                             .put("in", c.isIncoming).put("ans", c.isAnswered)
                             .put("d", c.duration).put("t", c.timestamp).put("u", c.accountUser)
+                            .put("codec", c.codec).put("qr", c.qualityRating).put("j", c.jitterMs)
+                            .put("loss", c.lossPercent).put("rtt", c.rttMs)
                     )
                 }
             })
@@ -133,7 +137,9 @@ object BackupManager {
                             username = o.optString("username"), password = o.optString("password"),
                             domain = o.optString("domain"), port = o.optInt("port", 5060),
                             transport = o.optString("transport", "UDP"), proxy = o.optString("proxy"),
-                            displayName = o.optString("displayName"), autoStart = o.optBoolean("autoStart", false)
+                            displayName = o.optString("displayName"), autoStart = o.optBoolean("autoStart", false),
+                            backupServer = o.optString("backupServer"), backupPort = o.optInt("backupPort", 5060),
+                            backupTransport = o.optString("backupTransport", "UDP")
                         )
                     )
                 }
@@ -156,7 +162,10 @@ object BackupManager {
                             remoteAddress = addr, displayName = o.optString("n"),
                             isIncoming = o.optBoolean("in"), isAnswered = o.optBoolean("ans", true),
                             duration = o.optInt("d"), timestamp = ts,
-                            accountUser = o.optString("u", "")
+                            accountUser = o.optString("u", ""),
+                            codec = o.optString("codec", ""), qualityRating = o.optDouble("qr", -1.0).toFloat(),
+                            jitterMs = o.optInt("j", 0), lossPercent = o.optDouble("loss", 0.0).toFloat(),
+                            rttMs = o.optInt("rtt", 0)
                         )
                     )
                     callCount++

@@ -279,6 +279,15 @@ fun CallDetailsScreen(
                                         }
                                     }
                                 }
+                                if (r.codec.isNotBlank()) {
+                                    val score = if (r.qualityRating >= 0f) " • ${"%.1f".format(r.qualityRating)}/5" else ""
+                                    Text(
+                                        "Call quality$score • ${r.codec} • RTT ${r.rttMs} ms • Jitter ${r.jitterMs} ms • Loss ${"%.1f".format(r.lossPercent)}%",
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(top = 6.dp)
+                                    )
+                                }
                                 if (hasRec && playingId == r.id) {
                                     PlaybackBar(
                                         progress = if (durationMs > 0) positionMs.toFloat() / durationMs else 0f,

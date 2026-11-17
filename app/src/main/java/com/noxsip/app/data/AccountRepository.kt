@@ -54,7 +54,10 @@ class AccountRepository(private val context: Context) {
                         proxy = o.optString("proxy"),
                         displayName = o.optString("displayName"),
                         autoStart = o.optBoolean("autoStart", false),
-                        enabled = o.optBoolean("enabled", true)
+                        enabled = o.optBoolean("enabled", true),
+                        backupServer = o.optString("backupServer"),
+                        backupPort = o.optInt("backupPort", 5060),
+                        backupTransport = o.optString("backupTransport", "UDP")
                     )
                 }
             } catch (_: Exception) {
@@ -97,6 +100,9 @@ class AccountRepository(private val context: Context) {
                     .put("displayName", a.displayName)
                     .put("autoStart", a.autoStart)
                     .put("enabled", a.enabled)
+                    .put("backupServer", a.backupServer)
+                    .put("backupPort", a.backupPort)
+                    .put("backupTransport", a.backupTransport)
             )
         }
         return arr.toString()
