@@ -6,12 +6,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PhoneForwarded
 import androidx.compose.material.icons.filled.CloudUpload
@@ -102,10 +99,9 @@ fun AutoCallScreen(controller: AutoCallController, registrationState: SipRegistr
         AutoCallPrefs.saveNumbers(context, numbers)
     }
 
-    Column(
-        modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
+    // AccountSetupScreen already owns the settings scroll container. A second verticalScroll here
+    // gives Compose unbounded nested scroll constraints and crashes as soon as Auto Call is opened.
+    Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -147,8 +143,8 @@ fun AutoCallScreen(controller: AutoCallController, registrationState: SipRegistr
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     androidx.compose.material3.Icon(Icons.Filled.MicOff, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary)
                     Column(Modifier.weight(1f)) {
-                        Text("Recorded voice", fontWeight = FontWeight.SemiBold)
-                        Text(voiceName ?: "No voice selected", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("Recorded voice (MP3 / WAV)", fontWeight = FontWeight.SemiBold)
+                        Text(voiceName ?: "Choose an MP3 or WAV file", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -207,7 +203,6 @@ fun AutoCallScreen(controller: AutoCallController, registrationState: SipRegistr
                 }
             }
         }
-        Spacer(Modifier.height(12.dp))
     }
 }
 
