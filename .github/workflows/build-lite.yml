@@ -140,4 +140,4 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --title "NoxSIP Lite ${APP_VERSION}" \
-            --notes "Auto Answer streams the selected audio after connection. This build uses the persistent signing key saved encrypted in this repository's releases. The first install after signing migration requires uninstalling the old app; later versionCode updates use the same key."
+            --notes "Improved background SIP reconnection and dialer navigation. Signed with the repository's persistent signing key for in-place updates of compatible Lite installs. Android power restrictions, network loss, or an unavailable SIP server can still interrupt service."

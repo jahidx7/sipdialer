@@ -41,8 +41,9 @@ class SipEngine(private val context: Context) {
 
     companion object {
         private const val TAG = "SipEngine"
-        private const val REGISTRATION_TIMEOUT_MS = 15_000L
-        private const val MAX_FAILURES = 2
+        private const val REGISTRATION_TIMEOUT_MS = 20_000L
+        private const val RETRY_BASE_DELAY_MS = 3_000L
+        private const val RETRY_MAX_DELAY_MS = 60_000L
 
         @Volatile
         private var INSTANCE: SipEngine? = null
@@ -158,6 +159,8 @@ class SipEngine(private val context: Context) {
     private val authChallenges = HashMap<String, Int>()
     private val stoppedByError = HashSet<String>()
     private val regTimeouts = HashMap<String, Runnable>()
+    private val registrationRetries = HashMap<String, Runnable>()
+    private val registrationRetryAttempts = HashMap<String, Int>()
 
     private fun cleanUser(a: SipAccountData) = a.username.trim().substringBefore("@")
     private fun cleanDomain(a: SipAccountData) = parseHostAndPort(a.domain, a.port).first
@@ -346,21 +349,73 @@ class SipEngine(private val context: Context) {
         }
     }
 
+    private fun armRegistrationTimeout(id: String) {
+        regTimeouts.remove(id)?.let { mainHandler.removeCallbacks(it) }
+        val timeout = makeRegistrationTimeout(id)
+        regTimeouts[id] = timeout
+        mainHandler.postDelayed(timeout, REGISTRATION_TIMEOUT_MS)
+    }
+
     private fun makeRegistrationTimeout(id: String): Runnable = Runnable {
         if (_accountStates.value[id] == SipRegistrationState.REGISTERING) {
-            val data = registeredData[id]
-            val transport = data?.transport ?: "UDP"
-            val port = data?.port ?: 5060
-            stopWithError(
+            val data = registeredData[id] ?: return@Runnable
+            val transport = data.transport
+            val port = parseHostAndPort(data.proxy.ifBlank { data.domain }, data.port).second
+            scheduleRegistrationRetry(
                 id,
-                "No response from SIP server ($transport port $port). " +
-                        "Please check the Domain/IP, Port, and internet connection."
+                "No response from SIP server ($transport port $port). Retrying automatically; check the Domain/IP, port, and internet if this continues."
             )
         }
     }
 
+    /**
+     * A temporary SIP/network failure must not disable REGISTER permanently.
+     * Retry with bounded exponential backoff until registration succeeds or the user disables the account.
+     */
+    private fun scheduleRegistrationRetry(id: String, message: String) {
+        if (!registeredData.containsKey(id) || id in stoppedByError) return
+        regTimeouts.remove(id)?.let { mainHandler.removeCallbacks(it) }
+        _accountErrors.value = _accountErrors.value + (id to message)
+        _accountStates.value = _accountStates.value + (id to SipRegistrationState.REGISTERING)
+        publishSelected()
+        if (registrationRetries.containsKey(id)) return
+
+        val attempt = (registrationRetryAttempts[id] ?: 0) + 1
+        registrationRetryAttempts[id] = attempt
+        val exponent = (attempt - 1).coerceAtMost(5)
+        val delayMs = (RETRY_BASE_DELAY_MS * (1L shl exponent)).coerceAtMost(RETRY_MAX_DELAY_MS)
+        lateinit var retry: Runnable
+        retry = Runnable {
+            if (registrationRetries[id] !== retry) return@Runnable
+            registrationRetries.remove(id)
+            val data = registeredData[id] ?: return@Runnable
+            if (id in stoppedByError) return@Runnable
+            try {
+                val account = core.getAccountByIdkey(id)
+                if (account == null) {
+                    register(data, select = currentAccount?.id == id)
+                    return@Runnable
+                }
+                val params = account.params.clone()
+                params.isRegisterEnabled = true
+                account.params = params
+                core.refreshRegisters()
+                armRegistrationTimeout(id)
+                Log.i(TAG, "SIP registration retry $attempt started for $id")
+            } catch (e: Exception) {
+                Log.w(TAG, "SIP registration retry failed to start for $id: ${e.message}")
+                scheduleRegistrationRetry(id, message)
+            }
+        }
+        registrationRetries[id] = retry
+        Log.i(TAG, "SIP registration retry $attempt for $id in ${delayMs}ms")
+        mainHandler.postDelayed(retry, delayMs)
+    }
+
     private fun stopWithError(id: String, message: String) {
         stoppedByError.add(id)
+        registrationRetries.remove(id)?.let { mainHandler.removeCallbacks(it) }
+        registrationRetryAttempts.remove(id)
         regTimeouts.remove(id)?.let { mainHandler.removeCallbacks(it) }
         try {
             core.getAccountByIdkey(id)?.let { acc ->
@@ -512,6 +567,8 @@ class SipEngine(private val context: Context) {
             when (state) {
                 RegistrationState.Ok, RegistrationState.Refreshing -> {
                     regTimeouts.remove(id)?.let { mainHandler.removeCallbacks(it) }
+                    registrationRetries.remove(id)?.let { mainHandler.removeCallbacks(it) }
+                    registrationRetryAttempts.remove(id)
                     failureCounts[id] = 0
                     authChallenges[id] = 0
                     stoppedByError.remove(id)
@@ -519,27 +576,30 @@ class SipEngine(private val context: Context) {
                 }
                 RegistrationState.Progress -> {
                     if (id !in stoppedByError && registeredData.containsKey(id)) {
+                        registrationRetries.remove(id)?.let { mainHandler.removeCallbacks(it) }
+                        if (!regTimeouts.containsKey(id)) armRegistrationTimeout(id)
                         setAccState(id, SipRegistrationState.REGISTERING)
                     }
                 }
                 RegistrationState.Failed -> {
                     if (!registeredData.containsKey(id)) return // ডিসকানেক্ট করা অবস্থায় ব্যর্থতা এরর নয়
+                    regTimeouts.remove(id)?.let { mainHandler.removeCallbacks(it) }
                     val n = (failureCounts[id] ?: 0) + 1
                     failureCounts[id] = n
                     val (msg, fatal) = describeFailure(errorInfo, reason, message)
                     Log.w(TAG, "Registration failed [$id] (#$n, fatal=$fatal): $msg")
-                    if (fatal || n >= MAX_FAILURES) {
+                    if (fatal) {
                         mainHandler.post { stopWithError(id, msg) }
                     } else {
-                        // সাময়িক ব্যর্থতা: আর "Connected" নয়, পুনঃচেষ্টা চলছে বলে দেখাই (ঠিক হলে Ok এসে এরর মুছবে)
-                        _accountErrors.value = _accountErrors.value + (id to msg)
-                        _accountStates.value = _accountStates.value + (id to SipRegistrationState.REGISTERING)
-                        publishSelected()
+                        mainHandler.post { scheduleRegistrationRetry(id, msg) }
                     }
                 }
                 RegistrationState.Cleared, RegistrationState.None -> {
                     if (id !in stoppedByError && registeredData.containsKey(id)) {
-                        setAccState(id, SipRegistrationState.UNREGISTERED)
+                        regTimeouts.remove(id)?.let { mainHandler.removeCallbacks(it) }
+                        mainHandler.post {
+                            scheduleRegistrationRetry(id, "SIP registration was lost. Reconnecting automatically.")
+                        }
                     }
                 }
             }
@@ -865,6 +925,8 @@ class SipEngine(private val context: Context) {
         }
 
         // শুধু এই অ্যাকাউন্টের আগের অবস্থা সাফ
+        registrationRetries.remove(id)?.let { mainHandler.removeCallbacks(it) }
+        registrationRetryAttempts.remove(id)
         regTimeouts.remove(id)?.let { mainHandler.removeCallbacks(it) }
         failureCounts[id] = 0
         authChallenges[id] = 0
@@ -1002,9 +1064,7 @@ class SipEngine(private val context: Context) {
             }
 
             setAccState(id, SipRegistrationState.REGISTERING)
-            val timeout = makeRegistrationTimeout(id)
-            regTimeouts[id] = timeout
-            mainHandler.postDelayed(timeout, REGISTRATION_TIMEOUT_MS)
+            armRegistrationTimeout(id)
             Log.i(
                 TAG,
                 "SIP registration started: id=$id user=$cleanUsername, domain=$cleanDomain, server=$cleanServerHost:$effectivePort, transport=$transportType"
@@ -1018,6 +1078,8 @@ class SipEngine(private val context: Context) {
 
     /** শুধু একটি অ্যাকাউন্ট আনরেজিস্টার করে; বাকিগুলো চালু থাকে */
     fun unregisterAccount(id: String) {
+        registrationRetries.remove(id)?.let { mainHandler.removeCallbacks(it) }
+        registrationRetryAttempts.remove(id)
         regTimeouts.remove(id)?.let { mainHandler.removeCallbacks(it) }
         failureCounts.remove(id)
         authChallenges.remove(id)

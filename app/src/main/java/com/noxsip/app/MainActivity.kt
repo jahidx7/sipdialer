@@ -507,7 +507,7 @@ fun SipDialerApp(
                         }
                         val pillLabel = when (registrationState) {
                             SipRegistrationState.REGISTERED -> "Online"
-                            SipRegistrationState.REGISTERING -> "Connecting"
+                            SipRegistrationState.REGISTERING -> if (registrationError != null) "Retrying" else "Connecting"
                             SipRegistrationState.ERROR -> "Error"
                             SipRegistrationState.UNREGISTERED -> "Offline"
                         }
@@ -551,60 +551,46 @@ fun SipDialerApp(
             // কিবোর্ড খোলা থাকলে নিচের মেনু লুকাই, যাতে মেসেজ বক্স কিবোর্ডের ঠিক ওপরে বসে
             val imeOpen = WindowInsets.ime.getBottom(androidx.compose.ui.platform.LocalDensity.current) > 0
             if (currentRoute != Screen.InCall.route && !imeOpen) {
-                Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 4.dp) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .windowInsetsPadding(NavigationBarDefaults.windowInsets)
-                            .height(64.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        bottomNavItems.forEach { (route, label, icon) ->
-                            val selected = currentRoute == route
-                            // রং সঙ্গে সঙ্গে বদলায় (কোনো ফেড/রিপল নেই)
-                            val tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                            Column(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .fillMaxHeight()
-                                    .clickable(
-                                        interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
-                                        indication = null
-                                    ) {
-                                        navController.navigate(route) {
-                                            popUpTo(navController.graph.startDestinationId) {
-                                                saveState = true
-                                            }
-                                            launchSingleTop = true
-                                            restoreState = true
-                                        }
-                                    },
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.Center
-                            ) {
-                                val badgeCount = when (route) {
-                                    Screen.Dialer.route -> if (selected) 0 else newMissed
-                                    else -> 0
+                NavigationBar(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    tonalElevation = 2.dp
+                ) {
+                    bottomNavItems.forEach { (route, label, icon) ->
+                        val selected = currentRoute == route
+                        val badgeCount = when (route) {
+                            Screen.Dialer.route -> if (selected) 0 else newMissed
+                            else -> 0
+                        }
+                        NavigationBarItem(
+                            selected = selected,
+                            onClick = {
+                                navController.navigate(route) {
+                                    popUpTo(navController.graph.startDestinationId) {
+                                        saveState = true
+                                    }
+                                    launchSingleTop = true
+                                    restoreState = true
                                 }
+                            },
+                            icon = {
                                 if (badgeCount > 0) {
                                     BadgedBox(badge = {
                                         Badge(containerColor = Red500) {
-                                            Text(if (badgeCount > 99) "99+" else badgeCount.toString(), color = Color.White)
+                                            Text(
+                                                if (badgeCount > 99) "99+" else badgeCount.toString(),
+                                                color = Color.White
+                                            )
                                         }
-                                    }) { Icon(icon, contentDescription = label, tint = tint) }
+                                    }) {
+                                        Icon(icon, contentDescription = label)
+                                    }
                                 } else {
-                                    Icon(icon, contentDescription = label, tint = tint)
+                                    Icon(icon, contentDescription = label)
                                 }
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Text(
-                                    text = label,
-                                    fontSize = 11.sp,
-                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                                    color = tint,
-                                    maxLines = 1
-                                )
-                            }
-                        }
+                            },
+                            label = { Text(label, maxLines = 1) },
+                            alwaysShowLabel = true
+                        )
                     }
                 }
             }

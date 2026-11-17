@@ -412,13 +412,15 @@ fun AccountSetupScreen(
             }
         }
 
-        // Error Banner (only visible when there is an error)
+        // Temporary registration failures stay visible as an amber retry notice.
         if (registrationError != null && (settingsTab == 0 || settingsTab == -1)) {
+            val retrying = registrationState == SipRegistrationState.REGISTERING
+            val noticeColor = if (retrying) Amber500 else Red500
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp),
-                color = Red500.copy(alpha = 0.12f),
-                border = BorderStroke(1.dp, Red500.copy(alpha = 0.45f))
+                color = noticeColor.copy(alpha = 0.12f),
+                border = BorderStroke(1.dp, noticeColor.copy(alpha = 0.45f))
             ) {
                 Row(
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
@@ -426,15 +428,15 @@ fun AccountSetupScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
-                        Icons.Filled.ErrorOutline,
+                        if (retrying) Icons.Filled.Sync else Icons.Filled.ErrorOutline,
                         contentDescription = null,
-                        tint = Red500,
+                        tint = noticeColor,
                         modifier = Modifier.size(18.dp)
                     )
                     Text(
-                        text = registrationError,
+                        text = if (retrying) "Reconnecting automatically. $registrationError" else registrationError,
                         fontSize = 12.sp,
-                        color = Red500,
+                        color = noticeColor,
                         fontWeight = FontWeight.Medium
                     )
                 }

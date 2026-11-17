@@ -15,7 +15,7 @@ import androidx.compose.ui.unit.sp
 import com.noxsip.app.service.SipForegroundService
 import com.noxsip.app.util.PowerPrefs
 
-/** ব্যাটারি মোড: Balanced (কম ব্যাটারি) বা Reliable (CPU সারাক্ষণ জাগানো) */
+/** SIP ব্যাকগ্রাউন্ড সংযোগের জন্য পাওয়ার মোড */
 @Composable
 fun PowerModeCard(modifier: Modifier = Modifier) {
     val context = LocalContext.current
@@ -50,14 +50,20 @@ fun PowerModeCard(modifier: Modifier = Modifier) {
             .padding(horizontal = 10.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp)
     ) {
-        Text("Battery mode", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+        Text("SIP connection reliability", fontSize = 13.sp, fontWeight = FontWeight.Bold)
         Option(
-            PowerPrefs.BALANCED, "Balanced (saves battery)",
-            "Phone sleeps and wakes every 30 s to keep the account registered. Allow \"Unrestricted\" battery for this app."
+            PowerPrefs.RELIABLE, "Reliable (recommended for incoming calls)",
+            "Keeps the SIP foreground service and CPU active in the background. Uses more battery."
         )
         Option(
-            PowerPrefs.RELIABLE, "Reliable (uses more battery)",
-            "Keeps the CPU awake all the time. Use this if incoming calls are missed in Balanced mode."
+            PowerPrefs.BALANCED, "Balanced (saves battery)",
+            "Android Doze may delay background network and alarms, so incoming SIP calls can be delayed."
+        )
+        Text(
+            "For best results, set this app's battery usage to Unrestricted in Android settings.",
+            fontSize = 10.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = 8.dp, top = 2.dp)
         )
     }
 }
