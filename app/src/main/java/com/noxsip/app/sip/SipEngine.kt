@@ -936,7 +936,18 @@ class SipEngine(private val context: Context) {
                     } catch (_: Exception) {
                         null
                     }
-                    _callState.value = SipCallState.Ended(remoteAddress, failure ?: message)
+                    val endedDuration = try { call.duration.coerceAtLeast(0) } catch (_: Exception) { 0 }
+                    val endedAnswered = activeCallConnected || endedDuration > 0
+                    val endedCode = try { call.errorInfo?.protocolCode ?: 0 } catch (_: Exception) { 0 }
+                    val endedTerminationReason = try { call.reason.toString() } catch (_: Exception) { "" }
+                    _callState.value = SipCallState.Ended(
+                        remoteAddress = remoteAddress,
+                        reason = failure ?: message,
+                        durationSeconds = endedDuration,
+                        answered = endedAnswered,
+                        protocolCode = endedCode,
+                        terminationReason = endedTerminationReason
+                    )
                     _isMuted.value = autoCallMicLocked
                     _isSpeaker.value = false
                     speakerWanted = false

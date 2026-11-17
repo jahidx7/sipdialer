@@ -1,63 +1,215 @@
 package com.noxsip.app.sip
 
 import android.content.Context
+import android.os.SystemClock
+import com.noxsip.app.data.AutoCallReportDatabase
+import com.noxsip.app.data.models.AutoCallReportRecord
 import com.noxsip.app.util.AutoCallPrefs
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
+import java.util.UUID
 import org.linphone.core.Call
 
-enum class AutoCallItemStatus { READY, CALLING, PLAYING, NO_ANSWER, FAILED, DONE, STOPPED }
+enum class AutoCallItemStatus {
+    READY, CALLING, PLAYING, ANSWERED, NO_ANSWER, REJECTED, BUSY, FAILED, STOPPED
+}
 
-data class AutoCallItem(val number: String, val status: AutoCallItemStatus = AutoCallItemStatus.READY, val detail: String = "")
+data class AutoCallItem(
+    val id: Long,
+    val batchId: String,
+    val number: String,
+    val status: AutoCallItemStatus,
+    val detail: String,
+    val answered: Boolean,
+    val callDurationSeconds: Int,
+    val voicePlayedMillis: Long,
+    val sipCode: Int,
+    val attempt: Int,
+    val createdAtMillis: Long,
+    val startedAtMillis: Long,
+    val finishedAtMillis: Long,
+    val endedBy: String,
+    val terminationReason: String
+)
 
 data class AutoCallProgress(
     val running: Boolean = false,
     val items: List<AutoCallItem> = emptyList(),
-    val currentIndex: Int = -1,
+    val currentId: Long? = null,
     val message: String = ""
 ) {
+    val currentIndex: Int get() = items.indexOfFirst { it.id == currentId }
+    val readyCount: Int get() = items.count { it.status == AutoCallItemStatus.READY }
+    val answeredCount: Int get() = items.count { it.answered }
+    val unansweredCount: Int get() = items.count {
+        it.status in setOf(
+            AutoCallItemStatus.ANSWERED,
+            AutoCallItemStatus.NO_ANSWER,
+            AutoCallItemStatus.REJECTED,
+            AutoCallItemStatus.BUSY,
+            AutoCallItemStatus.FAILED,
+            AutoCallItemStatus.STOPPED
+        ) && !it.answered
+    }
     val completedCount: Int get() = items.count {
-        it.status in setOf(AutoCallItemStatus.NO_ANSWER, AutoCallItemStatus.FAILED, AutoCallItemStatus.DONE, AutoCallItemStatus.STOPPED)
+        it.status in setOf(
+            AutoCallItemStatus.ANSWERED,
+            AutoCallItemStatus.NO_ANSWER,
+            AutoCallItemStatus.REJECTED,
+            AutoCallItemStatus.BUSY,
+            AutoCallItemStatus.FAILED,
+            AutoCallItemStatus.STOPPED
+        )
     }
 }
 
-/** One-at-a-time, explicit user-started outgoing SIP queue. */
-class AutoCallController private constructor(private val engine: SipEngine) {
+/** One-at-a-time, explicitly started SIP queue with a durable per-call report. */
+class AutoCallController private constructor(context: Context, private val engine: SipEngine) {
     companion object {
+        private const val ANSWER_TIMEOUT_MS = 45_000L
+        private const val END_WAIT_MS = 8_000L
+        private const val GAP_BETWEEN_CALLS_MS = 1_500L
+
         @Volatile private var instance: AutoCallController? = null
         fun getInstance(context: Context, engine: SipEngine): AutoCallController = instance ?: synchronized(this) {
-            instance ?: AutoCallController(engine).also { instance = it }
+            instance ?: AutoCallController(context.applicationContext, engine).also { instance = it }
         }
-        private const val ANSWER_TIMEOUT_MS = 45_000L
-        private const val GAP_BETWEEN_CALLS_MS = 1_500L
     }
 
+    private val database = AutoCallReportDatabase.getInstance(context)
+    private val dao = database.reports()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-    private val _progress = MutableStateFlow(AutoCallProgress())
-    val progress: StateFlow<AutoCallProgress> = _progress.asStateFlow()
+    private val initialized = CompletableDeferred<Unit>()
+    private val _control = MutableStateFlow(ControlState())
+    val progress: StateFlow<AutoCallProgress> = combine(_control, dao.observeAll()) { control, records ->
+        val items = records.map(AutoCallReportRecord::toItem)
+        AutoCallProgress(
+            running = control.running,
+            items = items,
+            currentId = control.currentId,
+            message = control.message
+        )
+    }.stateIn(scope, SharingStarted.Eagerly, AutoCallProgress(message = "Loading call report…"))
+
     private var queueJob: Job? = null
     private var priorMute = false
-    private var stopRequested = false
+    @Volatile private var stopRequested = false
 
-    /** Returns null when accepted, otherwise a user-readable reason. */
-    fun start(numbers: List<String>, voicePath: String): String? {
-        if (_progress.value.running) return "An Auto Call queue is already running."
-        val cleanNumbers = AutoCallPrefs.parseNumbers(numbers.joinToString("\n"))
-        if (cleanNumbers.isEmpty()) return "Add at least one valid phone number."
-        if (cleanNumbers.size > AutoCallPrefs.MAX_RECIPIENTS) return "A queue can contain up to 50 numbers."
+    init {
+        scope.launch {
+            withContext(Dispatchers.IO) { dao.markInterrupted() }
+            initialized.complete(Unit)
+        }
+    }
+
+    /** Starts a freshly scanned file list or a manually entered list. */
+    fun start(numbers: List<String>, voicePath: String, importedFromFile: Boolean = false): String? {
+        val clean = numbers.distinct()
+        if (clean.isEmpty()) return "Add at least one valid Bangladesh mobile number."
+        if (!importedFromFile && clean.size > AutoCallPrefs.MAX_MANUAL_RECIPIENTS) return "Manual entry is limited to ${AutoCallPrefs.MAX_MANUAL_RECIPIENTS} numbers. Import a file for a larger queue."
+        val invalidPath = validateStart(voicePath)
+        if (invalidPath != null) return invalidPath
+        priorMute = engine.isMuted.value
+        stopRequested = false
+        _control.value = ControlState(running = true, message = "Preparing ${clean.size} calls…")
+        queueJob = scope.launch {
+            initialized.await()
+            try {
+                val batch = UUID.randomUUID().toString()
+                val now = System.currentTimeMillis()
+                val records = clean.map { number ->
+                    AutoCallReportRecord(batchId = batch, number = number, createdAtMillis = now)
+                }
+                val insertedIds = withContext(Dispatchers.IO) { dao.insertAll(records) }
+                runQueue(insertedIds, voicePath)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                _control.value = ControlState(message = error.message ?: "Could not prepare the call queue")
+            }
+        }
+        return null
+    }
+
+    /** Starts only retry entries already added to the saved queue. */
+    fun startQueued(voicePath: String): String? {
+        val invalidPath = validateStart(voicePath)
+        if (invalidPath != null) return invalidPath
+        if (progress.value.readyCount == 0) return "There are no queued calls to start."
+        priorMute = engine.isMuted.value
+        stopRequested = false
+        _control.value = ControlState(running = true, message = "Preparing queued retries…")
+        queueJob = scope.launch {
+            initialized.await()
+            val ids = withContext(Dispatchers.IO) { dao.getQueued().map { it.id } }
+            if (ids.isEmpty()) {
+                _control.value = ControlState(message = "There are no queued calls to start.")
+            } else {
+                runQueue(ids, voicePath)
+            }
+        }
+        return null
+    }
+
+    fun queueRetry(itemId: Long): String? {
+        if (_control.value.running) return "Stop the current queue before adding retries."
+        val item = progress.value.items.firstOrNull { it.id == itemId } ?: return "Call report entry was not found."
+        if (!item.status.isRetryable()) return "Only unanswered, rejected, busy, or failed calls can be retried."
+        scope.launch {
+            initialized.await()
+            withContext(Dispatchers.IO) {
+                dao.insert(
+                    AutoCallReportRecord(
+                        batchId = item.batchId,
+                        number = item.number,
+                        status = AutoCallItemStatus.READY.name,
+                        detail = "Retry queued",
+                        attempt = item.attempt + 1,
+                        createdAtMillis = System.currentTimeMillis()
+                    )
+                )
+            }
+            _control.value = _control.value.copy(message = "Retry added to queue. Confirm consent and start queued retries.")
+        }
+        return null
+    }
+
+    fun clearReport(): String? {
+        if (_control.value.running) return "Stop Auto Call before clearing the report."
+        scope.launch {
+            initialized.await()
+            withContext(Dispatchers.IO) { dao.clearAll() }
+            _control.value = ControlState(message = "Call report cleared.")
+        }
+        return null
+    }
+
+    fun stop() {
+        if (!_control.value.running) return
+        stopRequested = true
+        engine.stopAutoCallAudio()
+        engine.endAutoCall()
+        _control.value = _control.value.copy(message = "Stopping current call and queue…")
+    }
+
+    private fun validateStart(voicePath: String): String? {
+        if (_control.value.running) return "An Auto Call queue is already running."
         if (!File(voicePath).isFile) return "Choose a voice recording first."
         if (AutoCallPrefs.voiceDurationMs(voicePath) == null) return "The selected audio is not ready to play."
         if (engine.registrationState.value != SipRegistrationState.REGISTERED) return "Register a SIP account before starting."
@@ -65,104 +217,202 @@ class AutoCallController private constructor(private val engine: SipEngine) {
         if (engine.callState.value !is SipCallState.Idle && engine.callState.value !is SipCallState.Ended) {
             return "Finish the current call before starting Auto Call."
         }
-
-        priorMute = engine.isMuted.value
-        stopRequested = false
-        _progress.value = AutoCallProgress(
-            running = true,
-            items = cleanNumbers.map { AutoCallItem(it) },
-            message = "Auto Call is running over the active SIP account."
-        )
-        queueJob = scope.launch { runQueue(voicePath) }
         return null
     }
 
-    fun stop() {
-        val job = queueJob ?: return
-        stopRequested = true
-        engine.stopAutoCallAudio()
-        engine.endAutoCall()
-        scope.launch {
-            job.cancelAndJoin()
-            finalizeQueue(stopped = true)
-        }
-    }
-
-    private suspend fun runQueue(voicePath: String) {
+    private suspend fun runQueue(ids: List<Long>, voicePath: String) {
         engine.setAutoCallMicLocked(true)
         try {
-            val durationMs = AutoCallPrefs.voiceDurationMs(voicePath) ?: error("Voice recording could not be read")
-            for (index in _progress.value.items.indices) {
+            val voiceDurationMs = AutoCallPrefs.voiceDurationMs(voicePath) ?: error("Voice recording could not be read")
+            for (id in ids) {
                 if (stopRequested) break
                 var idleWait = 0L
-                while (engine.hasActiveCall() && idleWait < 5_000L) {
+                while (engine.hasActiveCall() && idleWait < 5_000L && !stopRequested) {
                     delay(250L)
                     idleWait += 250L
                 }
+                if (stopRequested) break
                 if (engine.hasActiveCall()) {
-                    _progress.value = _progress.value.copy(message = "Queue stopped because another SIP call became active.")
-                    stopRequested = true
-                    break
+                    updateRecord(id) { it.copy(status = AutoCallItemStatus.FAILED.name, detail = "Another SIP call became active", endedBy = "SIP account busy", finishedAtMillis = System.currentTimeMillis()) }
+                    continue
                 }
-                setItem(index, AutoCallItemStatus.CALLING, "Calling")
-                _progress.value = _progress.value.copy(currentIndex = index, message = "Calling ${_progress.value.items[index].number}")
-                if (!engine.makeCall(_progress.value.items[index].number)) {
-                    setItem(index, AutoCallItemStatus.FAILED, "Could not start SIP call")
+
+                val record = withContext(Dispatchers.IO) { dao.getById(id) } ?: continue
+                updateRecord(id) {
+                    it.copy(
+                        status = AutoCallItemStatus.CALLING.name,
+                        detail = "Calling",
+                        startedAtMillis = System.currentTimeMillis(),
+                        finishedAtMillis = 0,
+                        answered = false,
+                        callDurationSeconds = 0,
+                        voicePlayedMillis = 0,
+                        sipCode = 0,
+                        endedBy = ""
+                    )
+                }
+                _control.value = _control.value.copy(currentId = id, message = "Calling ${record.number}")
+
+                if (!engine.makeCall(record.number)) {
+                    updateRecord(id) {
+                        it.copy(status = AutoCallItemStatus.FAILED.name, detail = "Could not start the SIP call", endedBy = "App", finishedAtMillis = System.currentTimeMillis())
+                    }
                     delay(GAP_BETWEEN_CALLS_MS)
                     continue
                 }
 
-                val outcome = withTimeoutOrNull(ANSWER_TIMEOUT_MS) {
+                val callOutcome = withTimeoutOrNull(ANSWER_TIMEOUT_MS) {
                     combine(engine.callState, engine.callMediaReady) { state, mediaReady -> state to mediaReady }
                         .first { (state, mediaReady) ->
-                            (state is SipCallState.Ended && matchesTarget(state.remoteAddress, _progress.value.items[index].number)) ||
-                                (state is SipCallState.Connected && state.call.dir == Call.Dir.Outgoing && matchesTarget(state.remoteAddress, _progress.value.items[index].number) && mediaReady)
+                            (state is SipCallState.Ended && matchesTarget(state.remoteAddress, record.number)) ||
+                                (state is SipCallState.Connected && state.call.dir == Call.Dir.Outgoing && matchesTarget(state.remoteAddress, record.number) && mediaReady)
                         }
                 }
-                if (stopRequested) break
-                when {
-                    outcome == null -> {
-                        engine.endAutoCall()
-                        setItem(index, AutoCallItemStatus.NO_ANSWER, "No answer; skipped after 45 seconds")
+
+                if (stopRequested) {
+                    val end = callOutcome?.first as? SipCallState.Ended
+                    updateRecord(id) {
+                        it.copy(
+                            status = AutoCallItemStatus.STOPPED.name,
+                            detail = "Stopped by user",
+                            answered = end?.answered ?: false,
+                            callDurationSeconds = end?.durationSeconds ?: 0,
+                            sipCode = end?.protocolCode ?: 0,
+                            endedBy = "User",
+                            finishedAtMillis = System.currentTimeMillis()
+                        )
                     }
-                    outcome.first is SipCallState.Ended -> {
-                        val reason = (outcome.first as SipCallState.Ended).reason
-                        setItem(index, AutoCallItemStatus.NO_ANSWER, reason.ifBlank { "Not answered; skipped" })
+                    break
+                }
+
+                when {
+                    callOutcome == null -> {
+                        engine.endAutoCall()
+                        val ended = waitForEnd(record.number)
+                        val classified = classifyUnanswered(ended?.protocolCode ?: 0, ended?.reason ?: "")
+                        updateRecord(id) {
+                            it.copy(
+                                status = classified.first.name,
+                                detail = classified.second,
+                                callDurationSeconds = ended?.durationSeconds ?: 0,
+                                answered = ended?.answered ?: false,
+                                sipCode = ended?.protocolCode ?: 0,
+                                endedBy = "Auto Call timeout",
+                            terminationReason = ended?.terminationReason.orEmpty(),
+                                finishedAtMillis = System.currentTimeMillis()
+                            )
+                        }
+                    }
+                    callOutcome.first is SipCallState.Ended -> {
+                        val ended = callOutcome.first as SipCallState.Ended
+                        val classified = classifyUnanswered(ended.protocolCode, ended.reason)
+                        updateRecord(id) {
+                            it.copy(
+                                status = classified.first.name,
+                                detail = classified.second,
+                                answered = ended.answered,
+                                callDurationSeconds = ended.durationSeconds,
+                                sipCode = ended.protocolCode,
+                                endedBy = classifyEndedBy(ended),
+                                terminationReason = ended.terminationReason,
+                                finishedAtMillis = System.currentTimeMillis()
+                            )
+                        }
                     }
                     else -> {
-                        setItem(index, AutoCallItemStatus.PLAYING, "Playing voice; microphone is off")
-                        _progress.value = _progress.value.copy(message = "Playing voice to ${_progress.value.items[index].number}")
-                        if (engine.startAutoCallAudio(voicePath)) {
-                            delay(durationMs + 500L)
-                            engine.stopAutoCallAudio()
+                        updateRecord(id) {
+                            it.copy(status = AutoCallItemStatus.PLAYING.name, detail = "Answered; playing recorded voice", answered = true)
+                        }
+                        _control.value = _control.value.copy(message = "Answered ${record.number}; playing voice")
+                        if (!engine.startAutoCallAudio(voicePath)) {
                             engine.endAutoCall()
-                            setItem(index, AutoCallItemStatus.DONE, "Voice played; call ended")
+                            val ended = waitForEnd(record.number)
+                            updateRecord(id) {
+                                it.copy(
+                                    status = AutoCallItemStatus.FAILED.name,
+                                    detail = "Answered, but voice playback failed",
+                                    answered = true,
+                                    callDurationSeconds = ended?.durationSeconds ?: 0,
+                                    sipCode = ended?.protocolCode ?: 0,
+                                    endedBy = "App playback error",
+                                    terminationReason = ended?.terminationReason.orEmpty(),
+                                    finishedAtMillis = System.currentTimeMillis()
+                                )
+                            }
                         } else {
-                            engine.endAutoCall()
-                            setItem(index, AutoCallItemStatus.FAILED, "Could not play the selected voice")
+                            val playbackStart = SystemClock.elapsedRealtime()
+                            var remoteEndDuringPlayback: SipCallState.Ended? = null
+                            while (!stopRequested && SystemClock.elapsedRealtime() - playbackStart < voiceDurationMs) {
+                                val left = voiceDurationMs - (SystemClock.elapsedRealtime() - playbackStart)
+                                val state = engine.callState.value
+                                if (state is SipCallState.Ended && matchesTarget(state.remoteAddress, record.number)) {
+                                    remoteEndDuringPlayback = state
+                                    break
+                                }
+                                delay(minOf(left, 150L).coerceAtLeast(1L))
+                            }
+                            val playedMillis = (SystemClock.elapsedRealtime() - playbackStart).coerceAtLeast(0L)
+                            engine.stopAutoCallAudio()
+                            if (remoteEndDuringPlayback == null) engine.endAutoCall()
+                            val ended = remoteEndDuringPlayback ?: waitForEnd(record.number)
+                            val stopped = stopRequested
+                            updateRecord(id) {
+                                it.copy(
+                                    status = if (stopped) AutoCallItemStatus.STOPPED.name else AutoCallItemStatus.ANSWERED.name,
+                                    detail = when {
+                                        stopped -> "Stopped during voice playback"
+                                        remoteEndDuringPlayback != null -> "Answered; remote side ended before voice finished"
+                                        else -> "Voice completed; call ended"
+                                    },
+                                    answered = true,
+                                    callDurationSeconds = ended?.durationSeconds ?: ((playedMillis + 500L) / 1000L).toInt(),
+                                    voicePlayedMillis = playedMillis,
+                                    sipCode = ended?.protocolCode ?: 0,
+                                    endedBy = when {
+                                        stopped -> "User"
+                                        remoteEndDuringPlayback != null -> classifyEndedBy(remoteEndDuringPlayback)
+                                        else -> "Auto Call (voice completed)"
+                                    },
+                                    terminationReason = ended?.terminationReason.orEmpty(),
+                                    finishedAtMillis = System.currentTimeMillis()
+                                )
+                            }
+                            if (stopped) break
                         }
                     }
                 }
-                if (index < _progress.value.items.lastIndex && !stopRequested) delay(GAP_BETWEEN_CALLS_MS)
+                _control.value = _control.value.copy(currentId = null)
+                if (!stopRequested) delay(GAP_BETWEEN_CALLS_MS)
             }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
-            _progress.value = _progress.value.copy(message = error.message ?: "Auto Call stopped after an error")
+            val id = _control.value.currentId
+            if (id != null) {
+                updateRecord(id) { it.copy(status = AutoCallItemStatus.FAILED.name, detail = error.message ?: "Call failed", endedBy = "App", finishedAtMillis = System.currentTimeMillis()) }
+            }
+            _control.value = _control.value.copy(message = error.message ?: "Auto Call stopped after an error")
         } finally {
             engine.stopAutoCallAudio()
             engine.setAutoCallMicLocked(false, priorMute)
-            finalizeQueue(stopRequested)
+            val wasStopped = stopRequested
+            _control.value = ControlState(
+                running = false,
+                message = if (wasStopped) "Auto Call stopped. Report saved." else "Queue complete. Report saved."
+            )
             queueJob = null
         }
     }
 
-    private fun setItem(index: Int, status: AutoCallItemStatus, detail: String) {
-        val current = _progress.value
-        if (index !in current.items.indices) return
-        _progress.value = current.copy(items = current.items.toMutableList().also {
-            it[index] = it[index].copy(status = status, detail = detail)
-        })
+    private suspend fun waitForEnd(number: String): SipCallState.Ended? = withTimeoutOrNull(END_WAIT_MS) {
+        engine.callState.first { state -> state is SipCallState.Ended && matchesTarget(state.remoteAddress, number) } as? SipCallState.Ended
+    }
+
+    private suspend fun updateRecord(id: Long, transform: (AutoCallReportRecord) -> AutoCallReportRecord) {
+        withContext(Dispatchers.IO) {
+            val old = dao.getById(id) ?: return@withContext
+            dao.update(transform(old))
+        }
     }
 
     private fun matchesTarget(remoteAddress: String, target: String): Boolean {
@@ -173,17 +423,54 @@ class AutoCallController private constructor(private val engine: SipEngine) {
         return suffixLength >= 7 && remoteDigits.takeLast(suffixLength) == targetDigits.takeLast(suffixLength)
     }
 
-    private fun finalizeQueue(stopped: Boolean) {
-        val current = _progress.value
-        val items = if (stopped) current.items.map {
-            if (it.status == AutoCallItemStatus.READY || it.status == AutoCallItemStatus.CALLING || it.status == AutoCallItemStatus.PLAYING)
-                it.copy(status = AutoCallItemStatus.STOPPED, detail = "Stopped by user") else it
-        } else current.items
-        _progress.value = current.copy(
-            running = false,
-            items = items,
-            currentIndex = -1,
-            message = if (!stopped) "Queue complete." else current.message.takeIf { it.startsWith("Queue stopped") } ?: "Auto Call stopped."
-        )
+    private fun classifyUnanswered(code: Int, reason: String): Pair<AutoCallItemStatus, String> = when {
+        code == 486 || code == 600 -> AutoCallItemStatus.BUSY to "Busy; not answered"
+        code == 603 || code == 403 -> AutoCallItemStatus.REJECTED to "Call rejected"
+        code == 487 -> AutoCallItemStatus.NO_ANSWER to "Call cancelled before answer"
+        code == 408 || code == 480 -> AutoCallItemStatus.NO_ANSWER to "No answer"
+        reason.contains("busy", ignoreCase = true) -> AutoCallItemStatus.BUSY to "Busy; not answered"
+        reason.contains("declin", ignoreCase = true) || reason.contains("reject", ignoreCase = true) -> AutoCallItemStatus.REJECTED to "Call rejected"
+        reason.startsWith("Call failed", ignoreCase = true) -> AutoCallItemStatus.FAILED to reason
+        else -> AutoCallItemStatus.NO_ANSWER to "Not answered"
     }
+
+    private fun classifyEndedBy(ended: SipCallState.Ended): String = when {
+        ended.protocolCode == 603 || ended.terminationReason.contains("Declined", ignoreCase = true) -> "Recipient side (call declined)"
+        ended.protocolCode == 486 || ended.protocolCode == 600 || ended.terminationReason.contains("Busy", ignoreCase = true) -> "Recipient side / network (busy)"
+        ended.answered -> "SIP peer or network after answer"
+        ended.protocolCode == 487 -> "Call cancelled; SIP does not identify who cancelled"
+        else -> "SIP server / remote side"
+    }
+
+    private data class ControlState(
+        val running: Boolean = false,
+        val currentId: Long? = null,
+        val message: String = ""
+    )
 }
+
+private fun AutoCallReportRecord.toItem() = AutoCallItem(
+    id = id,
+    batchId = batchId,
+    number = number,
+    status = runCatching { AutoCallItemStatus.valueOf(status) }.getOrDefault(AutoCallItemStatus.FAILED),
+    detail = detail,
+    answered = answered,
+    callDurationSeconds = callDurationSeconds,
+    voicePlayedMillis = voicePlayedMillis,
+    sipCode = sipCode,
+    attempt = attempt,
+    createdAtMillis = createdAtMillis,
+    startedAtMillis = startedAtMillis,
+    finishedAtMillis = finishedAtMillis,
+    endedBy = endedBy,
+    terminationReason = terminationReason
+)
+
+private fun AutoCallItemStatus.isRetryable(): Boolean = this in setOf(
+    AutoCallItemStatus.NO_ANSWER,
+    AutoCallItemStatus.REJECTED,
+    AutoCallItemStatus.BUSY,
+    AutoCallItemStatus.FAILED,
+    AutoCallItemStatus.STOPPED
+)

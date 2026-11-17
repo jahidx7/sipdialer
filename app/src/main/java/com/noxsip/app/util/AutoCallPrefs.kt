@@ -12,19 +12,27 @@ import org.xmlpull.v1.XmlPullParser
 
 /** Private storage for an explicitly user-started, one-pass SIP call list. */
 object AutoCallPrefs {
-    const val MAX_RECIPIENTS = 50
+    const val MAX_MANUAL_RECIPIENTS = 50
     private const val PREFS = "sip_auto_call"
     private const val KEY_NUMBERS = "numbers"
     private const val KEY_AUDIO_PATH = "audio_path"
     private const val KEY_AUDIO_NAME = "audio_name"
     private const val MAX_IMPORT_BYTES = 12 * 1024 * 1024
 
+    data class ImportResult(
+        val fileName: String,
+        val numbers: List<String>,
+        val scannedValues: Int,
+        val invalidValues: Int,
+        val duplicates: Int
+    )
+
     fun numbers(context: Context): List<String> = parseNumbers(
         prefs(context).getString(KEY_NUMBERS, "").orEmpty()
     )
 
     fun saveNumbers(context: Context, numbers: List<String>) {
-        prefs(context).edit().putString(KEY_NUMBERS, numbers.take(MAX_RECIPIENTS).joinToString("\n")).apply()
+        prefs(context).edit().putString(KEY_NUMBERS, numbers.take(MAX_MANUAL_RECIPIENTS).joinToString("\n")).apply()
     }
 
     fun voicePath(context: Context): String? = prefs(context).getString(KEY_AUDIO_PATH, null)
@@ -47,43 +55,61 @@ object AutoCallPrefs {
         prefs(context).edit().remove(KEY_AUDIO_PATH).remove(KEY_AUDIO_NAME).apply()
     }
 
-    fun importNumbers(context: Context, uri: Uri): List<String> {
-        val name = displayName(context, uri).lowercase()
+    fun importNumbers(context: Context, uri: Uri): ImportResult {
+        val fileName = displayName(context, uri)
+        val name = fileName.lowercase()
         val source = context.contentResolver.openInputStream(uri)
             ?: throw IllegalArgumentException("Could not open the selected file")
-        val text = source.use {
-            when {
-                name.endsWith(".xlsx") -> parseXlsx(it.readBytesBounded())
-                name.endsWith(".csv") || name.endsWith(".txt") -> parseDelimited(it.readBytesBounded().toString(Charsets.UTF_8))
-                else -> throw IllegalArgumentException("Choose an .xlsx, .csv, or .txt file")
-            }
+        val bytes = source.use { it.readBytesBounded() }
+        val text = when {
+            name.endsWith(".xlsx") || bytes.startsWithZipSignature() -> parseXlsx(bytes)
+            name.endsWith(".xls") -> throw IllegalArgumentException("Legacy .xls files are not supported. Save this workbook as .xlsx or CSV and import it again.")
+            bytes.isReadableText() -> parseDelimited(bytes.decodeUtf8())
+            else -> throw IllegalArgumentException("This file is not a readable spreadsheet or text file. Import .xlsx, .csv, .tsv, .txt, .json, .xml, .vcf, or another plain-text file.")
         }
-        val result = parseNumbers(text)
-        if (result.isEmpty()) throw IllegalArgumentException("No valid phone numbers were found")
-        return result
+        val result = scanNumbers(text, maxRecipients = null)
+        if (result.numbers.isEmpty()) throw IllegalArgumentException("No Bangladesh mobile numbers were found. Use +8801XXXXXXXXX or 01XXXXXXXXX.")
+        return result.copy(fileName = fileName)
     }
 
     /** Accepts one number per line or separated by comma, semicolon, or tab. */
-    fun parseNumbers(raw: String): List<String> {
-        val normalized = raw.map { ch ->
-            if (ch.isDigit()) Character.digit(ch, 10).takeIf { it in 0..9 }?.let { ('0'.code + it).toChar() } ?: ch else ch
-        }.joinToString("")
+    fun parseNumbers(raw: String): List<String> = scanNumbers(raw, MAX_MANUAL_RECIPIENTS).numbers
+
+    private fun scanNumbers(raw: String, maxRecipients: Int?): ImportResult {
         val output = LinkedHashSet<String>()
-        normalized.split(Regex("[\\r\\n,;\\t|]+"))
+        var scanned = 0
+        var invalid = 0
+        var duplicates = 0
+        raw.split(Regex("[\\r\\n,;\\t|]+"))
             .asSequence()
-            .map { token ->
-                val compact = token.trim().trim('"', '\'').filter { it.isDigit() || it == '+' }
-                val digits = compact.count(Char::isDigit)
-                when {
-                    digits !in 7..15 -> null
-                    compact.indexOf('+') > 0 -> compact.replace("+", "")
-                    compact.count { it == '+' } > 1 -> "+" + compact.filter(Char::isDigit)
-                    else -> compact
+            .map(String::trim)
+            .filter(String::isNotEmpty)
+            .forEach { token ->
+                scanned++
+                val number = normalizeBangladeshMobile(token)
+                if (number == null) {
+                    invalid++
+                } else if (!output.add(number)) {
+                    duplicates++
+                } else if (maxRecipients != null && output.size > maxRecipients) {
+                    throw IllegalArgumentException("This file contains more than $maxRecipients valid numbers. Split it into smaller files to keep the call queue stable.")
                 }
             }
-            .filterNotNull()
-            .forEach { output.add(it) }
-        return output.take(MAX_RECIPIENTS)
+        return ImportResult("", output.toList(), scanned, invalid, duplicates)
+    }
+
+    private fun normalizeBangladeshMobile(raw: String): String? {
+        val converted = raw.map { ch ->
+            if (ch.isDigit()) Character.digit(ch, 10).takeIf { it in 0..9 }?.let { ('0'.code + it).toChar() } ?: ch else ch
+        }.joinToString("")
+        val digits = converted.filter(Char::isDigit)
+        return when {
+            digits.length == 13 && digits.startsWith("8801") -> "+$digits"
+            digits.length == 11 && digits.startsWith("01") -> "+880${digits.drop(1)}"
+            // Excel may strip the display-leading zero when a phone cell was stored as a number.
+            digits.length == 10 && digits.startsWith("1") -> "+880$digits"
+            else -> null
+        }
     }
 
     /** Duration of the normalized 44-byte PCM WAV used by the SIP call player. */
@@ -140,34 +166,36 @@ object AutoCallPrefs {
                 zip.closeEntry()
             }
         }
-        val sheetName = entries.keys.filter { it.startsWith("xl/worksheets/sheet") }
+        val sheetNames = entries.keys.filter { it.startsWith("xl/worksheets/sheet") }
             .sortedBy { it.substringAfter("sheet").substringBefore('.').toIntOrNull() ?: Int.MAX_VALUE }
-            .firstOrNull() ?: throw IllegalArgumentException("The Excel file has no worksheet")
+        if (sheetNames.isEmpty()) throw IllegalArgumentException("The Excel file has no worksheet")
         val shared = entries["xl/sharedStrings.xml"]?.let(::parseSharedStrings).orEmpty()
         val values = ArrayList<String>()
-        val parser = Xml.newPullParser()
-        parser.setInput(ByteArrayInputStream(entries.getValue(sheetName)), "UTF-8")
-        var event = parser.eventType
-        var inCell = false
-        var cellType = ""
-        var cellValue = StringBuilder()
-        while (event != XmlPullParser.END_DOCUMENT) {
-            when (event) {
-                XmlPullParser.START_TAG -> when (parser.name) {
-                    "c" -> {
-                        inCell = true
-                        cellType = parser.getAttributeValue(null, "t").orEmpty()
-                        cellValue = StringBuilder()
+        sheetNames.forEach { sheetName ->
+            val parser = Xml.newPullParser()
+            parser.setInput(ByteArrayInputStream(entries.getValue(sheetName)), "UTF-8")
+            var event = parser.eventType
+            var inCell = false
+            var cellType = ""
+            var cellValue = StringBuilder()
+            while (event != XmlPullParser.END_DOCUMENT) {
+                when (event) {
+                    XmlPullParser.START_TAG -> when (parser.name) {
+                        "c" -> {
+                            inCell = true
+                            cellType = parser.getAttributeValue(null, "t").orEmpty()
+                            cellValue = StringBuilder()
+                        }
+                        "v", "t" -> if (inCell) cellValue.append(parser.nextText())
                     }
-                    "v", "t" -> if (inCell) cellValue.append(parser.nextText())
+                    XmlPullParser.END_TAG -> if (parser.name == "c" && inCell) {
+                        val raw = cellValue.toString()
+                        values.add(if (cellType == "s") shared.getOrNull(raw.toIntOrNull() ?: -1).orEmpty() else raw)
+                        inCell = false
+                    }
                 }
-                XmlPullParser.END_TAG -> if (parser.name == "c" && inCell) {
-                    val raw = cellValue.toString()
-                    values.add(if (cellType == "s") shared.getOrNull(raw.toIntOrNull() ?: -1).orEmpty() else raw)
-                    inCell = false
-                }
+                event = parser.next()
             }
-            event = parser.next()
         }
         return values.joinToString("\n")
     }
@@ -207,6 +235,29 @@ object AutoCallPrefs {
             output.write(buffer, 0, count)
         }
         return output.toByteArray()
+    }
+
+    private fun ByteArray.startsWithZipSignature(): Boolean =
+        size >= 4 && this[0] == 'P'.code.toByte() && this[1] == 'K'.code.toByte()
+
+    private fun ByteArray.isReadableText(): Boolean {
+        if (isEmpty() || any { it == 0.toByte() }) return false
+        val sampleLength = minOf(size, 4096)
+        val controls = take(sampleLength).count { byte ->
+            val value = byte.toInt() and 0xff
+            value < 0x09 || value in 0x0e..0x1f
+        }
+        return controls * 20 < sampleLength
+    }
+
+    private fun ByteArray.decodeUtf8(): String = try {
+        Charsets.UTF_8.newDecoder()
+            .onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
+            .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT)
+            .decode(java.nio.ByteBuffer.wrap(this))
+            .toString()
+    } catch (_: Exception) {
+        throw IllegalArgumentException("Could not read this file as UTF-8 text. Save it as CSV or UTF-8 text and import it again.")
     }
 
     private fun littleEndianInt(bytes: ByteArray, offset: Int): Int =

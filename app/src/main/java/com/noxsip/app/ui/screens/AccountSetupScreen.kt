@@ -230,7 +230,7 @@ fun AccountSetupScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
+            .then(if (settingsTab == 8) Modifier else Modifier.verticalScroll(rememberScrollState()))
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
@@ -1076,7 +1076,7 @@ fun AccountSetupScreen(
             )
         }
         if (settingsTab == 8) {
-            AutoCallScreen(autoCallController, registrationState)
+            AutoCallScreen(autoCallController, registrationState, Modifier.weight(1f))
         }
         if (settingsTab == 9) {
             val themeMode by ThemeModePrefs.mode.collectAsState()
