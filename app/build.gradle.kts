@@ -34,9 +34,11 @@ android {
         if (keystorePropsFile.exists()) {
             create("release") {
                 storeFile = file(keystoreProps.getProperty("storeFile"))
-                storePassword = keystoreProps.getProperty("storePassword")
+                storePassword = System.getenv("ANDROID_SIGNING_PASSWORD")
+                    ?: keystoreProps.getProperty("storePassword")
                 keyAlias = keystoreProps.getProperty("keyAlias")
-                keyPassword = keystoreProps.getProperty("keyPassword")
+                keyPassword = System.getenv("ANDROID_SIGNING_PASSWORD")
+                    ?: keystoreProps.getProperty("keyPassword")
             }
         }
     }
