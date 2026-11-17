@@ -99,6 +99,9 @@ class SipEngine(private val context: Context) {
     private val _callState = MutableStateFlow<SipCallState>(SipCallState.Idle)
     val callState: StateFlow<SipCallState> = _callState.asStateFlow()
 
+    private val _callMediaReady = MutableStateFlow(false)
+    val callMediaReady: StateFlow<Boolean> = _callMediaReady.asStateFlow()
+
     private val _isMuted = MutableStateFlow(false)
     val isMuted: StateFlow<Boolean> = _isMuted.asStateFlow()
 
@@ -216,6 +219,8 @@ class SipEngine(private val context: Context) {
     private var activeRecordingPath: String = ""
     private var pendingAutoAnswerAudioRemote: String? = null
     private var activeAutoAnswerAudioPlayer: Player? = null
+    private var activeAutoCallAudioPlayer: Player? = null
+    @Volatile private var autoCallMicLocked = false
 
     // ---- ইনকামিং কল "কলার কেটে দিয়েছে" শনাক্তকরণ (CANCEL না পাঠানো গেটওয়ের জন্য) ----
     // কিছু PSTN গেটওয়ে (যেমন SemuxGW) কলার কাটলে CANCEL পাঠায় না; শুধু প্রতি ~৩ সেকেন্ডে INVITE
@@ -776,6 +781,7 @@ class SipEngine(private val context: Context) {
                     mainHandler.removeCallbacks(ringingWatchdog)
                     activeCallConnected = false
                     activeCallRecorded = false
+                    _callMediaReady.value = false
                     CallRinger.stop()
                     CallNetworkLock.acquire(context)
                     SipForegroundService.setCallActive(context, true)
@@ -790,6 +796,7 @@ class SipEngine(private val context: Context) {
                 Call.State.Connected, Call.State.StreamsRunning -> {
                     mainHandler.removeCallbacks(ringingWatchdog)
                     if (state == Call.State.StreamsRunning) {
+                        _callMediaReady.value = true
                         mainHandler.post { startAutoAnswerAudio(call, remoteAddress) }
                     }
                     applyAudioRoute()
@@ -809,7 +816,8 @@ class SipEngine(private val context: Context) {
                     NotificationHelper.cancelIncomingCallNotification(context)
                     NativeDialerOverlay.dismissIncomingIfVisible()
                     try {
-                        core.isMicEnabled = !_isMuted.value
+                        core.isMicEnabled = !(_isMuted.value || autoCallMicLocked)
+                        if (autoCallMicLocked) _isMuted.value = true
                         if (TelecomHelper.isAutoRecordEnabled(context)) {
                             if (activeRecordingPath.isEmpty()) {
                                 activeRecordingPath = prepareRecordingPath(remoteAddress)
@@ -832,14 +840,17 @@ class SipEngine(private val context: Context) {
                     _callState.value = SipCallState.Connected(remoteAddress, call)
                 }
                 Call.State.Paused, Call.State.PausedByRemote -> {
+                    _callMediaReady.value = false
                     _callState.value = SipCallState.OnHold(remoteAddress, call)
                 }
                 Call.State.End, Call.State.Error, Call.State.Released -> {
+                    _callMediaReady.value = false
                     mainHandler.removeCallbacks(ringingWatchdog)
                     val callQualityForRecord = _callQuality.value
                     stopQualityPolling()
                     resetInviteTracking()
                     stopAutoAnswerAudio()
+                    stopAutoCallAudio()
                     if (core.callsNb <= 1) {
                         CallNetworkLock.release()
                         SipForegroundService.setCallActive(context, false)
@@ -926,7 +937,7 @@ class SipEngine(private val context: Context) {
                         null
                     }
                     _callState.value = SipCallState.Ended(remoteAddress, failure ?: message)
-                    _isMuted.value = false
+                    _isMuted.value = autoCallMicLocked
                     _isSpeaker.value = false
                     speakerWanted = false
                 }
@@ -1230,6 +1241,8 @@ class SipEngine(private val context: Context) {
                 params?.recordFile = activeRecordingPath
             }
 
+            _callMediaReady.value = false
+            _callState.value = SipCallState.Idle
             val call = core.inviteAddressWithParams(addr, params!!)
             Log.i(TAG, "Calling remote party")
             call != null
@@ -1237,6 +1250,61 @@ class SipEngine(private val context: Context) {
             Log.e(TAG, "Make call failed", e)
             false
         }
+    }
+
+    /** Lock the handset microphone off for the duration of an automated SIP audio call. */
+    fun setAutoCallMicLocked(locked: Boolean, restoreMuted: Boolean = _isMuted.value) {
+        val apply = {
+            autoCallMicLocked = locked
+            val muted = if (locked) true else restoreMuted
+            _isMuted.value = muted
+            try { core.isMicEnabled = !muted } catch (_: Exception) {}
+        }
+        if (Looper.myLooper() == Looper.getMainLooper()) apply() else mainHandler.post { apply() }
+    }
+
+    fun hasActiveCall(): Boolean = try { core.callsNb > 0 } catch (_: Exception) { false }
+
+    /** Ends only an outgoing call while Auto Call owns the microphone lock. */
+    fun endAutoCall() {
+        if (!autoCallMicLocked) return
+        try {
+            val call = core.currentCall ?: return
+            if (call.dir == Call.Dir.Outgoing) call.terminate()
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not end the active Auto Call: ${e.message}")
+        }
+    }
+
+    /** Play imported audio into the active SIP call's outgoing media stream. */
+    fun startAutoCallAudio(path: String): Boolean {
+        return try {
+            val call = core.currentCall ?: return false
+            if (call.state != Call.State.StreamsRunning || !File(path).isFile) return false
+            autoCallMicLocked = true
+            _isMuted.value = true
+            core.isMicEnabled = false
+            stopAutoCallAudio()
+            val player = call.player
+            if (player.open(path) < 0) {
+                try { player.close() } catch (_: Exception) {}
+                return false
+            }
+            if (player.start() < 0) {
+                try { player.close() } catch (_: Exception) {}
+                return false
+            }
+            activeAutoCallAudioPlayer = player
+            true
+        } catch (e: Exception) {
+            Log.w(TAG, "Auto-call audio playback failed: ${e.message}")
+            false
+        }
+    }
+
+    fun stopAutoCallAudio() {
+        try { activeAutoCallAudioPlayer?.close() } catch (_: Exception) {}
+        activeAutoCallAudioPlayer = null
     }
 
     /**
@@ -1355,8 +1423,9 @@ class SipEngine(private val context: Context) {
      * মিউট সেট বা টগল
      */
     fun setMute(muted: Boolean) {
-        core.isMicEnabled = !muted
-        _isMuted.value = muted
+        val effectiveMuted = muted || autoCallMicLocked
+        core.isMicEnabled = !effectiveMuted
+        _isMuted.value = effectiveMuted
     }
 
     fun toggleMute() {

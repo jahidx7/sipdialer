@@ -43,6 +43,7 @@ import com.noxsip.app.data.AppDatabase
 import com.noxsip.app.service.SipForegroundService
 import com.noxsip.app.sip.SipCallState
 import com.noxsip.app.sip.SipEngine
+import com.noxsip.app.sip.AutoCallController
 import com.noxsip.app.sip.SipRegistrationState
 import com.noxsip.app.telecom.TelecomHelper
 import com.noxsip.app.ui.navigation.Screen
@@ -203,6 +204,15 @@ fun SipDialerApp(
     val lifecycleOwner = LocalLifecycleOwner.current
     val navController = rememberNavController()
     val scope = rememberCoroutineScope()
+    val autoCallController = remember(sipEngine) { AutoCallController.getInstance(context.applicationContext, sipEngine) }
+    val autoCallProgress by autoCallController.progress.collectAsStateWithLifecycle()
+    val autoCallRunning = autoCallProgress.running
+    DisposableEffect(context, autoCallRunning) {
+        val window = (context as? ComponentActivity)?.window
+        if (autoCallRunning) window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        else window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        onDispose { window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
+    }
 
     val registrationState by sipEngine.registrationState.collectAsStateWithLifecycle()
     val registrationError by sipEngine.registrationError.collectAsStateWithLifecycle()
@@ -283,7 +293,7 @@ fun SipDialerApp(
     }
 
     val incomingTick by com.noxsip.app.telecom.IncomingUiRequest.tick.collectAsStateWithLifecycle()
-    LaunchedEffect(callState, incomingTick) {
+    LaunchedEffect(callState, incomingTick, autoCallRunning) {
         when (callState) {
             is SipCallState.Incoming -> {
                 // লক স্ক্রিন/স্ক্রিন বন্ধ থাকলে, অথবা পপআপে ট্যাপ করলে, পূর্ণ-স্ক্রিন কল পেজ
@@ -301,7 +311,7 @@ fun SipDialerApp(
             is SipCallState.Outgoing,
             is SipCallState.Connected,
             is SipCallState.OnHold -> {
-                if (currentRoute != Screen.InCall.route) {
+                if (!autoCallRunning && currentRoute != Screen.InCall.route) {
                     navController.navigate(Screen.InCall.route) {
                         launchSingleTop = true
                     }
@@ -736,6 +746,7 @@ fun SipDialerApp(
                     },
                     registrationState = registrationState,
                     registrationError = registrationError,
+                    autoCallController = autoCallController,
                     accountStates = accountStates,
                     onSaveAndRegister = { account ->
                         scope.launch {

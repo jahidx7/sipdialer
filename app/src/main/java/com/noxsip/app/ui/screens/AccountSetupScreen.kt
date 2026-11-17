@@ -47,10 +47,12 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.noxsip.app.data.models.SipAccountData
 import com.noxsip.app.sip.SipRegistrationState
+import com.noxsip.app.sip.AutoCallController
 import com.noxsip.app.telecom.CallChoiceActivity
 import com.noxsip.app.telecom.NativeDialerOverlay
 import com.noxsip.app.telecom.TelecomHelper
 import com.noxsip.app.util.AutoAnswerPrefs
+import com.noxsip.app.ui.theme.ThemeModePrefs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -67,6 +69,7 @@ fun AccountSetupScreen(
     onToggleEnabled: (String, Boolean) -> Unit = { _, _ -> },
     registrationState: SipRegistrationState,
     registrationError: String?,
+    autoCallController: AutoCallController,
     accountStates: Map<String, SipRegistrationState> = emptyMap(),
     onSaveAndRegister: (SipAccountData) -> Unit,
     onUnregister: (String) -> Unit,
@@ -361,12 +364,14 @@ fun AccountSetupScreen(
                     }
                 }
             }
+            SettingsRow(Icons.AutoMirrored.Filled.PhoneForwarded, "Auto Call", "Import a list and play a recorded SIP message", MaterialTheme.colorScheme.primary) { settingsTab = 8 }
             SettingsRow(Icons.Filled.PhoneInTalk, "Dialer & Permission", "Phone dialer integration", MaterialTheme.colorScheme.secondary) { settingsTab = 2 }
             SettingsRow(Icons.Filled.BatteryChargingFull, "Power Mode", "Battery mode", MaterialTheme.colorScheme.tertiary) { settingsTab = 4 }
             SettingsRow(Icons.Filled.MonitorHeart, "Connection Health", "SIP status, retries and failover", MaterialTheme.colorScheme.primary) { settingsTab = 7 }
             SettingsRow(Icons.Filled.Block, "Blocked numbers", "Calls from these numbers are rejected", MaterialTheme.colorScheme.error) { settingsTab = 5 }
             SettingsRow(Icons.Filled.ManageAccounts, "User Account", backupSubtitle, MaterialTheme.colorScheme.tertiary) { settingsTab = 3 }
             SettingsRow(Icons.Filled.SystemUpdate, "App Update", "Check for a new version", MaterialTheme.colorScheme.secondary) { settingsTab = 6 }
+            SettingsRow(Icons.Filled.Palette, "Appearance", "System, light, or dark theme", MaterialTheme.colorScheme.tertiary) { settingsTab = 9 }
             // নিচের ঐচ্ছিক ফ্লোটিং উইজেট (SupportSlot) যেন শেষ সারির উপর না পড়ে
             Spacer(modifier = Modifier.height(72.dp))
         } else {
@@ -378,6 +383,8 @@ fun AccountSetupScreen(
                 5 -> "Blocked numbers"
                 6 -> "App Update"
                 7 -> "Connection Health"
+                8 -> "Auto Call"
+                9 -> "Appearance"
                 else -> "User Account"
             }
             Row(
@@ -398,6 +405,8 @@ fun AccountSetupScreen(
                     5 -> Icons.Filled.Block to MaterialTheme.colorScheme.error
                     6 -> Icons.Filled.SystemUpdate to MaterialTheme.colorScheme.secondary
                     7 -> Icons.Filled.MonitorHeart to MaterialTheme.colorScheme.primary
+                    8 -> Icons.AutoMirrored.Filled.PhoneForwarded to MaterialTheme.colorScheme.primary
+                    9 -> Icons.Filled.Palette to MaterialTheme.colorScheme.tertiary
                     else -> Icons.Filled.ManageAccounts to MaterialTheme.colorScheme.tertiary
                 }
                 androidx.compose.foundation.layout.Box(
@@ -1065,6 +1074,33 @@ fun AccountSetupScreen(
                 registrationError = registrationError,
                 onRetry = { currentAccount?.let(onSaveAndRegister) }
             )
+        }
+        if (settingsTab == 8) {
+            AutoCallScreen(autoCallController, registrationState)
+        }
+        if (settingsTab == 9) {
+            val themeMode by ThemeModePrefs.mode.collectAsState()
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Choose how Nox SIP follows your display preference.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                listOf(
+                    ThemeModePrefs.SYSTEM to "Follow device setting",
+                    ThemeModePrefs.LIGHT to "Light",
+                    ThemeModePrefs.DARK to "Dark"
+                ).forEach { (value, label) ->
+                    Surface(
+                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { ThemeModePrefs.set(context, value) },
+                        color = MaterialTheme.colorScheme.surfaceContainerLow,
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                    ) {
+                        Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            RadioButton(selected = themeMode == value, onClick = { ThemeModePrefs.set(context, value) })
+                            Spacer(Modifier.width(8.dp))
+                            Text(label, fontWeight = if (themeMode == value) FontWeight.SemiBold else FontWeight.Normal)
+                        }
+                    }
+                }
+            }
         }
 
         if (settingsTab == 0 && showForm) androidx.compose.ui.window.Dialog(
