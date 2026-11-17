@@ -31,9 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.noxsip.app.data.models.CallRecord
 import com.noxsip.app.ui.theme.Green500
-import com.noxsip.app.ui.theme.Indigo600
 import com.noxsip.app.ui.theme.Red500
-import com.noxsip.app.ui.theme.Violet500
 import com.noxsip.app.util.DeviceContact
 import com.noxsip.app.util.RecordingStorage
 import java.io.File
@@ -75,14 +73,13 @@ fun CallHistoryScreen(
     }
 
     // 4 distinct, calm, eye-friendly colors — no icons inside chips so text never truncates!
-    val filterTabs = remember {
-        listOf(
-            CallFilterTab(0, "All", Indigo600),
-            CallFilterTab(1, "Missed", Red500),
-            CallFilterTab(2, "Received", Green500),
-            CallFilterTab(3, "Outgoing", Violet500)
-        )
-    }
+    val colorScheme = MaterialTheme.colorScheme
+    val filterTabs = listOf(
+        CallFilterTab(0, "All", colorScheme.primary),
+        CallFilterTab(1, "Missed", colorScheme.error),
+        CallFilterTab(2, "Received", Green500),
+        CallFilterTab(3, "Outgoing", colorScheme.tertiary)
+    )
 
     val filteredRecords = remember(callRecords, selectedFilter) {
         when (selectedFilter) {
@@ -130,7 +127,12 @@ fun CallHistoryScreen(
                             text = tab.label,
                             fontSize = 12.sp,
                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
-                            color = if (isSelected) Color.White else tab.color,
+                            color = if (!isSelected) tab.color else when (tab.id) {
+                                0 -> colorScheme.onPrimary
+                                1 -> colorScheme.onError
+                                3 -> colorScheme.onTertiary
+                                else -> Color.White
+                            },
                             textAlign = TextAlign.Center,
                             maxLines = 1
                         )

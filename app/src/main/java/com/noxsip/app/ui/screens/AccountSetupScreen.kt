@@ -56,10 +56,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.noxsip.app.ui.theme.Amber500
 import com.noxsip.app.ui.theme.Green500
-import com.noxsip.app.ui.theme.Indigo600
 import com.noxsip.app.ui.theme.Red500
-import com.noxsip.app.ui.theme.Sky500
-import com.noxsip.app.ui.theme.Violet500
 
 @Composable
 fun AccountSetupScreen(
@@ -238,13 +235,15 @@ fun AccountSetupScreen(
         androidx.activity.compose.BackHandler(enabled = settingsTab != -1) { settingsTab = -1 }
         if (settingsTab == -1) {
             val backupSubtitle = "Back up accounts, calls & contacts to a file"
-            SettingsRow(Icons.Filled.Dns, "SIP Account", "SIP account related settings", Color(0xFF2563EB)) { settingsTab = 0 }
-            SettingsRow(Icons.Filled.GraphicEq, "Audio & Codec", "Audio & codec related settings", Color(0xFF7C3AED)) { settingsTab = 1 }
+            SettingsRow(Icons.Filled.Dns, "SIP Account", "SIP account related settings", MaterialTheme.colorScheme.primary) { settingsTab = 0 }
+            SettingsRow(Icons.Filled.GraphicEq, "Audio & Codec", "Audio & codec related settings", MaterialTheme.colorScheme.tertiary) { settingsTab = 1 }
             // কল সেটিং: অটো রেকর্ড অন/অফ সুইচ (সরাসরি প্রধান তালিকায়)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f), RoundedCornerShape(12.dp))
                     .clickable {
                         autoRecordCalls = !autoRecordCalls
                         TelecomHelper.setAutoRecordEnabled(context, autoRecordCalls)
@@ -283,6 +282,8 @@ fun AccountSetupScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f), RoundedCornerShape(12.dp))
                     .clickable {
                         autoAnswerCalls = !autoAnswerCalls
                         AutoAnswerPrefs.setEnabled(context, autoAnswerCalls)
@@ -294,10 +295,10 @@ fun AccountSetupScreen(
                     modifier = Modifier
                         .size(44.dp)
                         .clip(CircleShape)
-                        .background(Color(0xFF0D9488).copy(alpha = 0.14f)),
+                        .background(MaterialTheme.colorScheme.tertiaryContainer),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(Icons.Filled.CallReceived, contentDescription = null, tint = Color(0xFF0D9488), modifier = Modifier.size(24.dp))
+                    Icon(Icons.Filled.CallReceived, contentDescription = null, tint = MaterialTheme.colorScheme.onTertiaryContainer, modifier = Modifier.size(24.dp))
                 }
                 Spacer(modifier = Modifier.width(14.dp))
                 Column(modifier = Modifier.weight(1f)) {
@@ -320,14 +321,14 @@ fun AccountSetupScreen(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(14.dp),
                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-                border = BorderStroke(1.dp, Color(0xFF0D9488).copy(alpha = 0.24f))
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f))
             ) {
                 Column(
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Filled.MusicNote, contentDescription = null, tint = Color(0xFF0D9488), modifier = Modifier.size(22.dp))
+                        Icon(Icons.Filled.MusicNote, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary, modifier = Modifier.size(22.dp))
                         Spacer(modifier = Modifier.width(8.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text("Auto Answer Audio", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
@@ -360,12 +361,12 @@ fun AccountSetupScreen(
                     }
                 }
             }
-            SettingsRow(Icons.Filled.PhoneInTalk, "Dialer & Permission", "Phone dialer integration", Color(0xFF16A34A)) { settingsTab = 2 }
-            SettingsRow(Icons.Filled.BatteryChargingFull, "Power Mode", "Battery mode", Color(0xFFEA8A00)) { settingsTab = 4 }
-            SettingsRow(Icons.Filled.MonitorHeart, "Connection Health", "SIP status, retries and failover", Color(0xFF0F766E)) { settingsTab = 7 }
-            SettingsRow(Icons.Filled.Block, "Blocked numbers", "Calls from these numbers are rejected", Color(0xFFDC2626)) { settingsTab = 5 }
-            SettingsRow(Icons.Filled.ManageAccounts, "User Account", backupSubtitle, Color(0xFFDB2777)) { settingsTab = 3 }
-            SettingsRow(Icons.Filled.SystemUpdate, "App Update", "Check for a new version", Color(0xFF0EA5E9)) { settingsTab = 6 }
+            SettingsRow(Icons.Filled.PhoneInTalk, "Dialer & Permission", "Phone dialer integration", MaterialTheme.colorScheme.secondary) { settingsTab = 2 }
+            SettingsRow(Icons.Filled.BatteryChargingFull, "Power Mode", "Battery mode", MaterialTheme.colorScheme.tertiary) { settingsTab = 4 }
+            SettingsRow(Icons.Filled.MonitorHeart, "Connection Health", "SIP status, retries and failover", MaterialTheme.colorScheme.primary) { settingsTab = 7 }
+            SettingsRow(Icons.Filled.Block, "Blocked numbers", "Calls from these numbers are rejected", MaterialTheme.colorScheme.error) { settingsTab = 5 }
+            SettingsRow(Icons.Filled.ManageAccounts, "User Account", backupSubtitle, MaterialTheme.colorScheme.tertiary) { settingsTab = 3 }
+            SettingsRow(Icons.Filled.SystemUpdate, "App Update", "Check for a new version", MaterialTheme.colorScheme.secondary) { settingsTab = 6 }
             // নিচের ঐচ্ছিক ফ্লোটিং উইজেট (SupportSlot) যেন শেষ সারির উপর না পড়ে
             Spacer(modifier = Modifier.height(72.dp))
         } else {
@@ -390,14 +391,14 @@ fun AccountSetupScreen(
                     )
                 }
                 val (pageIcon, pageColor) = when (settingsTab) {
-                    0 -> Icons.Filled.Dns to Color(0xFF2563EB)
-                    1 -> Icons.Filled.GraphicEq to Color(0xFF7C3AED)
-                    2 -> Icons.Filled.PhoneInTalk to Color(0xFF16A34A)
-                    4 -> Icons.Filled.BatteryChargingFull to Color(0xFFEA8A00)
-                    5 -> Icons.Filled.Block to Color(0xFFDC2626)
-                    6 -> Icons.Filled.SystemUpdate to Color(0xFF0EA5E9)
-                    7 -> Icons.Filled.MonitorHeart to Color(0xFF0F766E)
-                    else -> Icons.Filled.ManageAccounts to Color(0xFFDB2777)
+                    0 -> Icons.Filled.Dns to MaterialTheme.colorScheme.primary
+                    1 -> Icons.Filled.GraphicEq to MaterialTheme.colorScheme.tertiary
+                    2 -> Icons.Filled.PhoneInTalk to MaterialTheme.colorScheme.secondary
+                    4 -> Icons.Filled.BatteryChargingFull to MaterialTheme.colorScheme.tertiary
+                    5 -> Icons.Filled.Block to MaterialTheme.colorScheme.error
+                    6 -> Icons.Filled.SystemUpdate to MaterialTheme.colorScheme.secondary
+                    7 -> Icons.Filled.MonitorHeart to MaterialTheme.colorScheme.primary
+                    else -> Icons.Filled.ManageAccounts to MaterialTheme.colorScheme.tertiary
                 }
                 androidx.compose.foundation.layout.Box(
                     modifier = Modifier
@@ -455,7 +456,7 @@ fun AccountSetupScreen(
             shape = RoundedCornerShape(16.dp),
             color = MaterialTheme.colorScheme.surface,
             shadowElevation = 2.dp,
-            border = BorderStroke(1.dp, Sky500.copy(alpha = 0.28f))
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
         ) {
             Column(
                 modifier = Modifier
@@ -486,14 +487,14 @@ fun AccountSetupScreen(
                                 .size(30.dp)
                                 .clip(RoundedCornerShape(8.dp))
                                 .background(
-                                    Brush.linearGradient(listOf(Sky500, Indigo600))
+                                    Brush.linearGradient(listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.tertiary))
                                 ),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
                                 Icons.Filled.SimCard,
                                 contentDescription = null,
-                                tint = Color.White,
+                                tint = MaterialTheme.colorScheme.onPrimary,
                                 modifier = Modifier.size(17.dp)
                             )
                         }
@@ -524,7 +525,7 @@ fun AccountSetupScreen(
                         title = "Call Redirect",
                         statusText = if (isCallRedirectionHeld) "Enabled ✓" else "Tap to Enable",
                         isEnabled = isCallRedirectionHeld,
-                        accentColor = Indigo600,
+                        accentColor = MaterialTheme.colorScheme.primary,
                         onClick = {
                             val roleIntent = TelecomHelper.createCallRedirectionRoleIntent(context)
                             if (roleIntent != null) {
@@ -570,8 +571,8 @@ fun AccountSetupScreen(
 
                         Surface(
                             shape = RoundedCornerShape(20.dp),
-                            color = Violet500.copy(alpha = 0.14f),
-                            border = BorderStroke(1.dp, Violet500.copy(alpha = 0.4f)),
+                            color = MaterialTheme.colorScheme.tertiaryContainer,
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.4f)),
                             modifier = Modifier
                                 .wrapContentWidth()
                                 .clip(RoundedCornerShape(20.dp))
@@ -600,12 +601,12 @@ fun AccountSetupScreen(
                                 Icon(
                                     Icons.Filled.PlayArrow,
                                     contentDescription = null,
-                                    tint = Violet500,
+                                    tint = MaterialTheme.colorScheme.onTertiaryContainer,
                                     modifier = Modifier.size(14.dp)
                                 )
                                 Text(
                                     text = "Test Popup",
-                                    color = Violet500,
+                                    color = MaterialTheme.colorScheme.onTertiaryContainer,
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
                                     maxLines = 1,
@@ -623,7 +624,7 @@ fun AccountSetupScreen(
                     title = "Call Forwarding (Beta)",
                     statusText = if (com.noxsip.app.beta.CallForward.mode(context) != com.noxsip.app.beta.CallForward.OFF) "SIP forwarding on (Experimental)" else "SIM and SIP (Experimental)",
                     isEnabled = com.noxsip.app.beta.CallForward.mode(context) != com.noxsip.app.beta.CallForward.OFF,
-                    accentColor = Indigo600,
+                    accentColor = MaterialTheme.colorScheme.primary,
                     onClick = { showForwarding = true }
                 )
                 if (showForwarding) {
@@ -651,7 +652,7 @@ fun AccountSetupScreen(
                                 .weight(1f)
                                 .clip(RoundedCornerShape(8.dp))
                                 .background(
-                                    if (selected) Indigo600 else Color.Transparent
+                                    if (selected) MaterialTheme.colorScheme.primary else Color.Transparent
                                 )
                                 .clickable {
                                     routingMode = modeValue
@@ -664,7 +665,7 @@ fun AccountSetupScreen(
                                 text = label,
                                 fontSize = 11.sp,
                                 fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                                color = if (selected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
@@ -841,7 +842,7 @@ fun AccountSetupScreen(
                                     text = if (item.ok == false) "Fix" else "Open",
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = Indigo600
+                                    color = MaterialTheme.colorScheme.primary
                                 )
                             }
                         }
@@ -916,7 +917,7 @@ fun AccountSetupScreen(
             shape = RoundedCornerShape(16.dp),
             color = MaterialTheme.colorScheme.surface,
             shadowElevation = 2.dp,
-            border = BorderStroke(1.dp, Indigo600.copy(alpha = 0.25f))
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.25f))
         ) {
             Column(
                 modifier = Modifier
@@ -959,7 +960,7 @@ fun AccountSetupScreen(
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(10.dp))
                             .background(
-                                if (isSelected) Indigo600.copy(alpha = 0.10f)
+                                if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
                                 else MaterialTheme.colorScheme.surfaceVariant
                             )
                             .clickable {
@@ -1016,7 +1017,7 @@ fun AccountSetupScreen(
                             modifier = Modifier.scale(0.8f)
                         )
                         IconButton(onClick = { formTarget = acc; showForm = true }, modifier = Modifier.size(36.dp)) {
-                            Icon(Icons.Filled.Edit, contentDescription = "Edit", modifier = Modifier.size(18.dp), tint = Indigo600)
+                            Icon(Icons.Filled.Edit, contentDescription = "Edit", modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
                         }
                         IconButton(onClick = { confirmDelete = acc }, modifier = Modifier.size(36.dp)) {
                             Icon(Icons.Filled.Delete, contentDescription = "Delete", modifier = Modifier.size(18.dp), tint = Red500)
@@ -1105,7 +1106,7 @@ fun AccountSetupScreen(
             shape = RoundedCornerShape(16.dp),
             color = MaterialTheme.colorScheme.surface,
             shadowElevation = 2.dp,
-            border = BorderStroke(1.dp, Indigo600.copy(alpha = 0.25f))
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.25f))
         ) {
             Column(
                 modifier = Modifier
@@ -1128,14 +1129,14 @@ fun AccountSetupScreen(
                                 .size(30.dp)
                                 .clip(RoundedCornerShape(8.dp))
                                 .background(
-                                    Brush.linearGradient(listOf(Indigo600, Violet500))
+                                    Brush.linearGradient(listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.tertiary))
                                 ),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
                                 Icons.Filled.Dns,
                                 contentDescription = null,
-                                tint = Color.White,
+                                tint = MaterialTheme.colorScheme.onPrimary,
                                 modifier = Modifier.size(17.dp)
                             )
                         }
@@ -1267,7 +1268,7 @@ fun AccountSetupScreen(
                             Box(
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(8.dp))
-                                    .background(if (selected) Sky500 else Color.Transparent)
+                                    .background(if (selected) MaterialTheme.colorScheme.primary else Color.Transparent)
                                     .clickable(enabled = !formLocked) {
                                         transport = option
                                         if (option == "TLS" && port == "5060") {
@@ -1283,7 +1284,7 @@ fun AccountSetupScreen(
                                     text = option,
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = if (selected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                         }
@@ -1298,7 +1299,7 @@ fun AccountSetupScreen(
                             text = if (showAdvanced) "Hide Advanced ▲" else "Advanced ▼",
                             fontSize = 11.sp,
                             fontWeight = FontWeight.SemiBold,
-                            color = Indigo600
+                            color = MaterialTheme.colorScheme.primary
                         )
                     }
                 }
@@ -1480,8 +1481,10 @@ private fun SettingsRow(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerLow)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f), RoundedCornerShape(12.dp))
             .clickable(onClick = onClick)
-            .padding(horizontal = 8.dp, vertical = 10.dp),
+            .padding(horizontal = 12.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         // রঙিন গোল ব্যাকগ্রাউন্ডে আইকন
@@ -1560,7 +1563,7 @@ private fun SlimInputField(
                 fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onSurface
             ),
-            cursorBrush = SolidColor(Indigo600),
+            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
             decorationBox = { innerTextField ->
                 Row(
                     modifier = Modifier

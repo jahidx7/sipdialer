@@ -95,9 +95,9 @@ fun InCallScreen(
             .background(
                 Brush.verticalGradient(
                     colors = listOf(
-                        Color(0xFF0A1428),
-                        Color(0xFF13274F),
-                        Color(0xFF0A1428)
+                        MaterialTheme.colorScheme.surfaceContainerHigh,
+                        MaterialTheme.colorScheme.surface,
+                        MaterialTheme.colorScheme.surfaceContainerHigh
                     )
                 )
             )
@@ -116,12 +116,12 @@ fun InCallScreen(
                 modifier = Modifier.padding(top = 36.dp)
             ) {
                 Surface(
-                    color = Color(0xFF1E3A6E),
+                    color = MaterialTheme.colorScheme.primaryContainer,
                     shape = RoundedCornerShape(12.dp)
                 ) {
                     Text(
                         text = "SIP VOIP HD AUDIO",
-                        color = Color(0xFF93C5FD),
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
                         letterSpacing = 1.2.sp,
@@ -136,7 +136,7 @@ fun InCallScreen(
                     fontSize = if (contactName != null) 32.sp else 30.sp,
                     fontWeight = FontWeight.Bold,
                     textAlign = TextAlign.Center,
-                    color = Color.White
+                    color = MaterialTheme.colorScheme.onSurface
                 )
                 if (contactName != null) {
                     Spacer(modifier = Modifier.height(4.dp))
@@ -144,7 +144,7 @@ fun InCallScreen(
                         text = cleanName,
                         fontSize = 16.sp,
                         textAlign = TextAlign.Center,
-                        color = Color(0xFF94A3B8)
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
 
@@ -154,7 +154,7 @@ fun InCallScreen(
                     text = statusText,
                     fontSize = 16.sp,
                     // কানেক্টেড হলে "Connected" ও টাইমার সবুজ
-                    color = if (callState is SipCallState.Connected) Color(0xFF22C55E) else Color(0xFFCBD5E1),
+                    color = if (callState is SipCallState.Connected) com.noxsip.app.ui.theme.Green500 else MaterialTheme.colorScheme.onSurfaceVariant,
                     fontWeight = if (callState is SipCallState.Connected) FontWeight.SemiBold else FontWeight.Normal,
                     textAlign = TextAlign.Center
                 )
@@ -174,7 +174,7 @@ fun InCallScreen(
                         ),
                         label = "recAlpha"
                     )
-                    Surface(color = Color(0x33EF4444), shape = RoundedCornerShape(50)) {
+                    Surface(color = MaterialTheme.colorScheme.errorContainer, shape = RoundedCornerShape(50)) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
@@ -183,14 +183,14 @@ fun InCallScreen(
                                 modifier = Modifier
                                     .size(9.dp)
                                     .clip(CircleShape)
-                                    .background(Color(0xFFEF4444).copy(alpha = dotAlpha))
+                                    .background(MaterialTheme.colorScheme.error.copy(alpha = dotAlpha))
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 text = "REC • Recording",
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = Color(0xFFFCA5A5)
+                                color = MaterialTheme.colorScheme.onErrorContainer
                             )
                         }
                     }
@@ -232,7 +232,7 @@ fun InCallScreen(
                                 "$qualityLabel • ${quality.codec}"
                             },
                             fontSize = 12.sp,
-                            color = Color(0xFFCBD5E1),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center
                         )
                     }
@@ -242,7 +242,7 @@ fun InCallScreen(
                             text = "Mic ${quality.micDb.toInt()} dB • ${if (quality.micEnabled) "on" else "MUTED"} • " +
                                 "in: ${quality.inputDevice.ifEmpty { "NONE" }} • ↑${quality.upKbps} ↓${quality.downKbps} kbps",
                             fontSize = 11.sp,
-                            color = Color(0xFF64748B),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f),
                             textAlign = TextAlign.Center
                         )
                     }
@@ -343,6 +343,7 @@ private fun CallingRipples() {
         ),
         label = "iconPulse"
     )
+    val rippleColor = MaterialTheme.colorScheme.primary
     Box(modifier = Modifier.size(260.dp), contentAlignment = Alignment.Center) {
         androidx.compose.foundation.Canvas(modifier = Modifier.fillMaxSize()) {
             val minR = 34.dp.toPx()
@@ -350,7 +351,7 @@ private fun CallingRipples() {
             for (i in 0 until 3) {
                 val p = (progress + i / 3f) % 1f
                 drawCircle(
-                    color = Color(0xFF3B82F6).copy(alpha = 0.35f * (1f - p)),
+                    color = rippleColor.copy(alpha = 0.30f * (1f - p)),
                     radius = minR + (maxR - minR) * p,
                     style = androidx.compose.ui.graphics.drawscope.Stroke(width = 3.dp.toPx())
                 )
@@ -360,13 +361,13 @@ private fun CallingRipples() {
             modifier = Modifier
                 .size((64 * iconPulse).dp)
                 .clip(CircleShape)
-                .background(Color(0xFF2563EB)),
+                .background(MaterialTheme.colorScheme.primary),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 Icons.Filled.Call,
                 contentDescription = null,
-                tint = Color.White,
+                tint = MaterialTheme.colorScheme.onPrimary,
                 modifier = Modifier.size(30.dp)
             )
         }

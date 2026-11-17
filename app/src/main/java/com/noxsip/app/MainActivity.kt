@@ -23,7 +23,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -389,15 +388,7 @@ fun SipDialerApp(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(
-                            Brush.horizontalGradient(
-                                colors = listOf(
-                                    Color(0xFF1E3FA0),
-                                    Color(0xFF2563EB),
-                                    Color(0xFF3B8BEB)
-                                )
-                            )
-                        )
+                        .background(MaterialTheme.colorScheme.primaryContainer)
                         .statusBarsPadding()
                 ) {
                     Row(
@@ -414,16 +405,16 @@ fun SipDialerApp(
                         ) {
                             Box(
                                 modifier = Modifier
-                                    .size(36.dp)
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(Color.White.copy(alpha = 0.14f)),
+                                    .size(42.dp)
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .background(MaterialTheme.colorScheme.primary),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
                                     Icons.Filled.WifiCalling3,
                                     contentDescription = null,
-                                    tint = Color.White,
-                                    modifier = Modifier.size(20.dp)
+                                    tint = MaterialTheme.colorScheme.onPrimary,
+                                    modifier = Modifier.size(22.dp)
                                 )
                             }
                             Box(modifier = Modifier.weight(1f)) {
@@ -434,8 +425,8 @@ fun SipDialerApp(
                                 ) {
                                     Text(
                                         text = "Nox SIP",
-                                        color = Color.White,
-                                        fontSize = 16.sp,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        fontSize = 18.sp,
                                         fontWeight = FontWeight.Bold,
                                         maxLines = 1
                                     )
@@ -445,7 +436,7 @@ fun SipDialerApp(
                                         } else {
                                             "Tap Settings to configure SIP"
                                         }) + (if (savedAccounts.size > 1) "  ▾" else ""),
-                                        color = Color(0xFFE0ECFF),
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.76f),
                                         fontSize = 11.sp,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
@@ -458,11 +449,11 @@ fun SipDialerApp(
                                     savedAccounts.forEach { acc ->
                                         val st = accountStates[acc.id]
                                         val dot = when {
-                                            !acc.enabled -> Color(0xFF94A3B8)
-                                            st == SipRegistrationState.REGISTERED -> Color(0xFF34D399)
+                                            !acc.enabled -> MaterialTheme.colorScheme.outline
+                                            st == SipRegistrationState.REGISTERED -> com.noxsip.app.ui.theme.Green500
                                             st == SipRegistrationState.REGISTERING -> Amber500
-                                            st == SipRegistrationState.ERROR -> Red500
-                                            else -> Color(0xFF94A3B8)
+                                            st == SipRegistrationState.ERROR -> MaterialTheme.colorScheme.error
+                                            else -> MaterialTheme.colorScheme.outline
                                         }
                                         DropdownMenuItem(
                                             text = {
@@ -500,10 +491,10 @@ fun SipDialerApp(
                         Spacer(modifier = Modifier.width(8.dp))
 
                         val pillColor = when (registrationState) {
-                            SipRegistrationState.REGISTERED -> Color(0xFF34D399)
+                            SipRegistrationState.REGISTERED -> com.noxsip.app.ui.theme.Green500
                             SipRegistrationState.REGISTERING -> Amber500
-                            SipRegistrationState.ERROR -> Red500
-                            SipRegistrationState.UNREGISTERED -> Color(0xFF94A3B8)
+                            SipRegistrationState.ERROR -> MaterialTheme.colorScheme.error
+                            SipRegistrationState.UNREGISTERED -> MaterialTheme.colorScheme.outline
                         }
                         val pillLabel = when (registrationState) {
                             SipRegistrationState.REGISTERED -> "Online"
@@ -515,8 +506,8 @@ fun SipDialerApp(
                         Row(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(20.dp))
-                                .background(Color.Black.copy(alpha = 0.25f))
-                                .border(1.dp, pillColor.copy(alpha = 0.65f), RoundedCornerShape(20.dp))
+                                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.76f))
+                                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(20.dp))
                                 .clickable {
                                     navController.navigate(Screen.Account.route) {
                                         popUpTo(navController.graph.startDestinationId) {
@@ -538,7 +529,7 @@ fun SipDialerApp(
                             )
                             Text(
                                 text = pillLabel,
-                                color = Color.White,
+                                color = MaterialTheme.colorScheme.onSurface,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.SemiBold
                             )
@@ -552,8 +543,8 @@ fun SipDialerApp(
             val imeOpen = WindowInsets.ime.getBottom(androidx.compose.ui.platform.LocalDensity.current) > 0
             if (currentRoute != Screen.InCall.route && !imeOpen) {
                 NavigationBar(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    tonalElevation = 2.dp
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                    tonalElevation = 0.dp
                 ) {
                     bottomNavItems.forEach { (route, label, icon) ->
                         val selected = currentRoute == route
@@ -575,10 +566,10 @@ fun SipDialerApp(
                             icon = {
                                 if (badgeCount > 0) {
                                     BadgedBox(badge = {
-                                        Badge(containerColor = Red500) {
+                                        Badge(containerColor = MaterialTheme.colorScheme.error) {
                                             Text(
                                                 if (badgeCount > 99) "99+" else badgeCount.toString(),
-                                                color = Color.White
+                                                color = MaterialTheme.colorScheme.onError
                                             )
                                         }
                                     }) {
@@ -589,7 +580,14 @@ fun SipDialerApp(
                                 }
                             },
                             label = { Text(label, maxLines = 1) },
-                            alwaysShowLabel = true
+                            alwaysShowLabel = true,
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                selectedTextColor = MaterialTheme.colorScheme.primary,
+                                indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         )
                     }
                 }

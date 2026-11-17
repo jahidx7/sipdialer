@@ -9,12 +9,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.noxsip.app.ui.theme.Green500
-import com.noxsip.app.ui.theme.Red500
 
 @Composable
 fun CallControls(
@@ -60,8 +57,8 @@ fun CallControls(
 
         FloatingActionButton(
             onClick = onEndCall,
-            containerColor = Red500,
-            contentColor = Color.White,
+            containerColor = MaterialTheme.colorScheme.error,
+            contentColor = MaterialTheme.colorScheme.onError,
             shape = CircleShape,
             modifier = Modifier.size(64.dp)
         ) {
@@ -87,8 +84,8 @@ fun IncomingCallControls(
     ) {
         FloatingActionButton(
             onClick = onDecline,
-            containerColor = Red500,
-            contentColor = Color.White,
+            containerColor = MaterialTheme.colorScheme.error,
+            contentColor = MaterialTheme.colorScheme.onError,
             shape = CircleShape,
             modifier = Modifier.size(64.dp)
         ) {
@@ -101,8 +98,8 @@ fun IncomingCallControls(
 
         FloatingActionButton(
             onClick = onAnswer,
-            containerColor = Green500,
-            contentColor = Color.White,
+            containerColor = MaterialTheme.colorScheme.primary,
+            contentColor = MaterialTheme.colorScheme.onPrimary,
             shape = CircleShape,
             modifier = Modifier.size(64.dp)
         ) {
@@ -134,10 +131,10 @@ private fun CallControlButton(
             onCheckedChange = { onClick() },
             modifier = Modifier.size(60.dp),
             colors = IconButtonDefaults.filledIconToggleButtonColors(
-                checkedContainerColor = Color(0xFF3B82F6),
-                checkedContentColor = Color.White,
-                containerColor = Color.White.copy(alpha = 0.16f),
-                contentColor = Color.White
+                checkedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                checkedContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                contentColor = MaterialTheme.colorScheme.onSurfaceVariant
             )
         ) {
             Icon(
@@ -150,7 +147,7 @@ private fun CallControlButton(
             text = label,
             fontSize = 13.sp,
             fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
-            color = Color.White,
+            color = MaterialTheme.colorScheme.onSurface,
             maxLines = 1
         )
     }
