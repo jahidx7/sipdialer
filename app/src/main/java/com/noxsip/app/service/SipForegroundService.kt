@@ -170,6 +170,7 @@ class SipForegroundService : Service() {
     private var netCallback: ConnectivityManager.NetworkCallback? = null
     private var lastNetwork: Network? = null
     private var networkLost = false
+    private var routeRecoveryPending = false
 
     /** Wi-Fi ↔ মোবাইল ডেটা বদলালে বা নেটওয়ার্ক ফিরলে দ্রুত রি-রেজিস্টার */
     private fun registerNetworkWatch() {
@@ -177,17 +178,41 @@ class SipForegroundService : Service() {
             val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
             val cb = object : ConnectivityManager.NetworkCallback() {
                 override fun onAvailable(network: Network) {
-                    val changed = lastNetwork != null && lastNetwork != network
+                    val changed = lastNetwork != network
                     if (changed || networkLost) {
-                        Log.i(TAG, "Network changed/restored, refreshing registration")
-                        sipEngine.onNetworkChanged()
+                        Log.i(TAG, "Default network available/changed; waiting for its capabilities before restarting SIP")
+                        routeRecoveryPending = true
                     }
                     lastNetwork = network
                     networkLost = false
                 }
 
+                override fun onCapabilitiesChanged(
+                    network: Network,
+                    networkCapabilities: android.net.NetworkCapabilities
+                ) {
+                    // Do not synchronously query ConnectivityManager from this callback. INTERNET
+                    // means the route can carry IP traffic; VALIDATED is not required because
+                    // captive-portal checks can fail while a private SIP server is reachable.
+                    if (network == lastNetwork &&
+                        networkCapabilities.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                    ) {
+                        if (routeRecoveryPending) {
+                            routeRecoveryPending = false
+                            Log.i(TAG, "Default route can carry internet traffic; restarting SIP signaling")
+                            sipEngine.onNetworkChanged()
+                        }
+                    }
+                }
+
                 override fun onLost(network: Network) {
-                    if (lastNetwork == network) networkLost = true
+                    if (lastNetwork == network) {
+                        networkLost = true
+                        lastNetwork = null
+                        routeRecoveryPending = true
+                        Log.i(TAG, "No default network; pausing SIP registration until a route returns")
+                        sipEngine.onNetworkUnavailable()
+                    }
                 }
             }
             cm.registerDefaultNetworkCallback(cb)

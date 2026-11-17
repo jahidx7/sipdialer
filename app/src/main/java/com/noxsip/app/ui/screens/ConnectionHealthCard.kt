@@ -108,6 +108,13 @@ fun ConnectionHealthCard(
                 if (error.isNotBlank()) {
                     Text(error, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
                 }
+                if (!connected && network.contains("internet available", ignoreCase = true)) {
+                    Text(
+                        "Internet is available, but SIP registration is separate. A 503 response means the SIP server replied that it is temporarily unavailable.",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
                 Button(
                     onClick = onRetry,
                     enabled = currentAccount != null && registrationState != SipRegistrationState.REGISTERING,
@@ -126,7 +133,7 @@ fun ConnectionHealthCard(
                     Text("Incoming-call push", fontWeight = FontWeight.SemiBold)
                 }
                 Text(
-                    "Push mode is not configured in this build. It requires RFC 8599 support on your SIP server plus a configured FCM push gateway. Until those server details are available, the app keeps SIP registered using its foreground service and selected power mode.",
+                    "Push wake-up is not configured. It requires RFC 8599 support on the SIP server, an FCM push gateway, and app-side Firebase setup. This build detects Wi-Fi/mobile-data handovers and re-registers while its foreground service is running; push is needed to wake the app if Android stops that service.",
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

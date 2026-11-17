@@ -52,6 +52,14 @@ object SipConnectionDiagnostics {
         prefs(context).edit().putString(key(id, "error"), message.take(500)).apply()
     }
 
+    fun waitingForNetwork(context: Context, id: String, message: String) {
+        prefs(context).edit()
+            .putString(key(id, "error"), message.take(500))
+            .putLong(key(id, "retryAt"), 0L)
+            .putInt(key(id, "retryCount"), 0)
+            .apply()
+    }
+
     fun retryScheduled(context: Context, id: String, at: Long, attempt: Int) {
         prefs(context).edit()
             .putLong(key(id, "retryAt"), at)

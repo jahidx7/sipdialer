@@ -46,6 +46,8 @@ class SipEngine(private val context: Context) {
         private const val RETRY_BASE_DELAY_MS = 3_000L
         private const val RETRY_MAX_DELAY_MS = 60_000L
         private const val PRIMARY_SERVER_PROBE_MS = 5 * 60_000L
+        private const val NETWORK_RESTART_DELAY_MS = 250L
+        private const val NETWORK_RESTART_EVENT_GRACE_MS = 1_500L
 
         @Volatile
         private var INSTANCE: SipEngine? = null
@@ -59,23 +61,115 @@ class SipEngine(private val context: Context) {
 
     private val core: Core get() = SipDialerApplication.core
 
+    private var networkAvailable = true
+    private var pendingNetworkRecovery = false
+    private var networkRecoveryTask: Runnable? = null
+    private var networkRestartEventGraceUntil = 0L
+
     /** Balanced মোডের Alarm থেকে ডাকা: ঘুম থেকে জেগে রেজিস্ট্রেশন/NAT তাজা করে (কল চলাকালীন কিছু করে না) */
     fun keepAliveTick() {
         mainHandler.post {
             try {
-                if (core.callsNb == 0 && core.accountList.isNotEmpty()) core.refreshRegisters()
+                if (networkAvailable && core.callsNb == 0 && core.accountList.isNotEmpty()) core.refreshRegisters()
             } catch (_: Exception) {
             }
         }
     }
 
-    /** On a Wi-Fi/mobile network change, probe the primary endpoint again if using backup. */
+    /** Rebuild Linphone signaling channels on the new Android default-network route. */
     fun onNetworkChanged() {
         mainHandler.post {
-            val backups = backupActive.toList()
-            if (backups.isEmpty()) keepAliveTick()
-            else backups.forEach { switchEndpoint(it, useBackup = false) }
+            networkAvailable = true
+            pendingNetworkRecovery = true
+            scheduleNetworkRecovery()
         }
+    }
+
+    /** Tell Linphone to close stale SIP/NAT sockets while Android has no default internet route. */
+    fun onNetworkUnavailable() {
+        mainHandler.post {
+            networkAvailable = false
+            pendingNetworkRecovery = false
+            networkRecoveryTask?.let(mainHandler::removeCallbacks)
+            networkRecoveryTask = null
+            val waitMessage = "Waiting for an internet network. SIP will reconnect automatically when Wi-Fi or mobile data returns."
+            registeredData.keys.toList().forEach { id ->
+                registrationRetries.remove(id)?.let(mainHandler::removeCallbacks)
+                registrationRetryAttempts.remove(id)
+                regTimeouts.remove(id)?.let(mainHandler::removeCallbacks)
+                SipConnectionDiagnostics.waitingForNetwork(context, id, waitMessage)
+                setAccState(id, SipRegistrationState.REGISTERING, error = waitMessage)
+            }
+            try {
+                core.isNetworkReachable = false
+            } catch (e: Exception) {
+                Log.w(TAG, "Could not mark SIP network unreachable: ${e.message}")
+            }
+        }
+    }
+
+    private fun scheduleNetworkRecovery() {
+        networkRecoveryTask?.let(mainHandler::removeCallbacks)
+        lateinit var task: Runnable
+        task = Runnable {
+            if (networkRecoveryTask !== task) return@Runnable
+            networkRecoveryTask = null
+            if (!networkAvailable || !pendingNetworkRecovery) return@Runnable
+            if (core.callsNb > 0) {
+                Log.i(TAG, "Network changed during an active call; SIP re-registration will follow call end")
+                return@Runnable
+            }
+
+            val ids = registeredData.keys.toList()
+            if (ids.isEmpty()) {
+                pendingNetworkRecovery = false
+                try { core.isNetworkReachable = true } catch (_: Exception) {}
+                return@Runnable
+            }
+
+            ids.forEach { id ->
+                registrationRetries.remove(id)?.let(mainHandler::removeCallbacks)
+                registrationRetryAttempts.remove(id)
+                regTimeouts.remove(id)?.let(mainHandler::removeCallbacks)
+                setAccState(id, SipRegistrationState.REGISTERING)
+                SipConnectionDiagnostics.attempted(context, id)
+            }
+
+            try {
+                // Linphone documents FALSE→TRUE as the way to restart channels after an IP/interface
+                // change; setting TRUE makes it reconnect and refresh every SIP registration.
+                core.isNetworkReachable = false
+                mainHandler.postDelayed({
+                    if (!networkAvailable) return@postDelayed
+                    if (core.callsNb > 0) {
+                        pendingNetworkRecovery = true
+                        return@postDelayed
+                    }
+                    try {
+                        core.isNetworkReachable = true
+                        pendingNetworkRecovery = false
+                        networkRestartEventGraceUntil = SystemClock.elapsedRealtime() + NETWORK_RESTART_EVENT_GRACE_MS
+                        ids.forEach { id ->
+                            if (registeredData.containsKey(id)) armRegistrationTimeout(id)
+                        }
+                        Log.i(TAG, "SIP signaling restarted for ${ids.size} account(s) after network handover")
+                    } catch (e: Exception) {
+                        Log.w(TAG, "SIP network recovery failed: ${e.message}")
+                        ids.filter(registeredData::containsKey).forEach { id ->
+                            scheduleRegistrationRetry(id, "Could not restart SIP after a network change. Retrying automatically.")
+                        }
+                    }
+                }, NETWORK_RESTART_DELAY_MS)
+            } catch (e: Exception) {
+                Log.w(TAG, "Could not restart SIP signaling after network change: ${e.message}")
+                pendingNetworkRecovery = false
+                ids.filter(registeredData::containsKey).forEach { id ->
+                    scheduleRegistrationRetry(id, "Could not restart SIP after a network change. Retrying automatically.")
+                }
+            }
+        }
+        networkRecoveryTask = task
+        mainHandler.postDelayed(task, 100L)
     }
 
     /** নির্বাচিত (সবুজ টিক) অ্যাকাউন্টের অবস্থা; পুরনো UI এটাই দেখে */
@@ -394,6 +488,22 @@ class SipEngine(private val context: Context) {
     private fun scheduleRegistrationRetry(id: String, message: String) {
         if (!registeredData.containsKey(id) || id in stoppedByError) return
         SipConnectionDiagnostics.failed(context, id, message)
+        if (!networkAvailable) {
+            val waitMessage = "Waiting for an internet network. SIP will reconnect automatically when Wi-Fi or mobile data returns."
+            SipConnectionDiagnostics.waitingForNetwork(context, id, waitMessage)
+            _accountErrors.value = _accountErrors.value + (id to waitMessage)
+            _accountStates.value = _accountStates.value + (id to SipRegistrationState.REGISTERING)
+            publishSelected()
+            return
+        }
+        if (SystemClock.elapsedRealtime() < networkRestartEventGraceUntil) {
+            // Linphone can report Cleared/Failed while it discards the old interface socket.
+            // Give its immediate re-registration a short window before considering backup/failure.
+            regTimeouts.remove(id)?.let(mainHandler::removeCallbacks)
+            setAccState(id, SipRegistrationState.REGISTERING)
+            armRegistrationTimeout(id)
+            return
+        }
         if (switchToBackupAfterFailure(id, message)) return
         regTimeouts.remove(id)?.let { mainHandler.removeCallbacks(it) }
         _accountErrors.value = _accountErrors.value + (id to message)
@@ -523,9 +633,11 @@ class SipEngine(private val context: Context) {
                 "Account/extension not found on server (404 Not Found)." to true
             lower.contains("certificate") || lower.contains("ssl") || lower.contains("tls") ->
                 "TLS connection failed ($phrase). Try switching Transport to UDP and Port to 5060." to true
-            code == 408 || code == 503 || reason == Reason.NoResponse ||
+            code == 503 ->
+                "SIP server temporarily unavailable (503: $phrase). Retrying automatically; check the server load and registration service." to false
+            code == 408 || reason == Reason.NoResponse ||
                     reason == Reason.ServerTimeout || reason == Reason.IOError ->
-                "Cannot reach server (${if (code > 0) "Code $code" else phrase}). Check Domain/IP, Port, and Transport (UDP/TCP)." to false
+                "No response from SIP server (${if (code > 0) "Code $code" else phrase}). Retrying automatically; check Domain/IP, Port, Transport, and internet." to false
             code > 0 -> "Registration failed (Code $code: $phrase)" to false
             else -> "Registration failed: ${phrase.ifBlank { "Unknown error" }}" to false
         }
@@ -951,6 +1063,13 @@ class SipEngine(private val context: Context) {
                     _isMuted.value = autoCallMicLocked
                     _isSpeaker.value = false
                     speakerWanted = false
+                    if (pendingNetworkRecovery) {
+                        mainHandler.postDelayed({
+                            if (networkAvailable && core.callsNb == 0 && pendingNetworkRecovery) {
+                                scheduleNetworkRecovery()
+                            }
+                        }, 350L)
+                    }
                 }
                 else -> {}
             }
