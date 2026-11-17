@@ -42,9 +42,9 @@ class SipEngine(private val context: Context) {
 
     companion object {
         private const val TAG = "SipEngine"
-        private const val REGISTRATION_TIMEOUT_MS = 20_000L
-        private const val RETRY_BASE_DELAY_MS = 3_000L
-        private const val RETRY_MAX_DELAY_MS = 60_000L
+        private const val REGISTRATION_TIMEOUT_MS = 10_000L
+        private const val RETRY_BASE_DELAY_MS = 1_500L
+        private const val RETRY_MAX_DELAY_MS = 30_000L
         private const val PRIMARY_SERVER_PROBE_MS = 5 * 60_000L
         private const val NETWORK_RESTART_DELAY_MS = 250L
         private const val NETWORK_RESTART_EVENT_GRACE_MS = 1_500L

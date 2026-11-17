@@ -26,7 +26,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
@@ -372,8 +371,6 @@ fun SipDialerApp(
             }
         }
     }
-    var showAccountMenu by remember { mutableStateOf(false) }
-
     // ব্লক তালিকা, ডিটেইলস পেজ থেকে চ্যাট খোলা, WhatsApp/Telegram লিঙ্ক
     LaunchedEffect(Unit) { com.noxsip.app.util.BlockList.init(context) }
     val blockedNumbers by com.noxsip.app.util.BlockList.numbers.collectAsState()
@@ -392,162 +389,70 @@ fun SipDialerApp(
 
     Box(modifier = Modifier.fillMaxSize()) {
         Scaffold(
+            containerColor = MaterialTheme.colorScheme.surface,
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
             topBar = {
-            if (currentRoute != Screen.InCall.route) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(MaterialTheme.colorScheme.primaryContainer)
-                        .statusBarsPadding()
-                ) {
-                    Row(
+                if (currentRoute != Screen.InCall.route) {
+                    Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                            .background(MaterialTheme.colorScheme.surface)
+                            .statusBarsPadding()
                     ) {
                         Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.End,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Box(
+                            val pillColor = when (registrationState) {
+                                SipRegistrationState.REGISTERED -> com.noxsip.app.ui.theme.Green500
+                                SipRegistrationState.REGISTERING -> Amber500
+                                SipRegistrationState.ERROR -> MaterialTheme.colorScheme.error
+                                SipRegistrationState.UNREGISTERED -> MaterialTheme.colorScheme.outline
+                            }
+                            val pillLabel = when (registrationState) {
+                                SipRegistrationState.REGISTERED -> "Online"
+                                SipRegistrationState.REGISTERING -> if (registrationError != null) "Retrying" else "Connecting"
+                                SipRegistrationState.ERROR -> "Error"
+                                SipRegistrationState.UNREGISTERED -> "Offline"
+                            }
+                            Row(
                                 modifier = Modifier
-                                    .size(42.dp)
-                                    .clip(RoundedCornerShape(14.dp))
-                                    .background(MaterialTheme.colorScheme.primary),
-                                contentAlignment = Alignment.Center
+                                    .clip(RoundedCornerShape(20.dp))
+                                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.76f))
+                                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(20.dp))
+                                    .clickable {
+                                        navController.navigate(Screen.Account.route) {
+                                            popUpTo(navController.graph.startDestinationId) {
+                                                saveState = true
+                                            }
+                                            launchSingleTop = true
+                                            restoreState = true
+                                        }
+                                    }
+                                    .padding(horizontal = 12.dp, vertical = 5.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
-                                Icon(
-                                    Icons.Filled.WifiCalling3,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onPrimary,
-                                    modifier = Modifier.size(22.dp)
+                                Box(
+                                    modifier = Modifier
+                                        .size(8.dp)
+                                        .clip(CircleShape)
+                                        .background(pillColor)
+                                )
+                                Text(
+                                    text = pillLabel,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold
                                 )
                             }
-                            Box(modifier = Modifier.weight(1f)) {
-                                Column(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .clickable(enabled = savedAccounts.size > 1) { showAccountMenu = true }
-                                ) {
-                                    Text(
-                                        text = "Nox SIP",
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                        fontSize = 18.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        maxLines = 1
-                                    )
-                                    Text(
-                                        text = (if (currentAccount != null && currentAccount!!.username.isNotBlank()) {
-                                            currentAccount!!.name.ifBlank { currentAccount!!.username }
-                                        } else {
-                                            "Tap Settings to configure SIP"
-                                        }) + (if (savedAccounts.size > 1) "  ▾" else ""),
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.76f),
-                                        fontSize = 11.sp,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
-                                DropdownMenu(
-                                    expanded = showAccountMenu,
-                                    onDismissRequest = { showAccountMenu = false }
-                                ) {
-                                    savedAccounts.forEach { acc ->
-                                        val st = accountStates[acc.id]
-                                        val dot = when {
-                                            !acc.enabled -> MaterialTheme.colorScheme.outline
-                                            st == SipRegistrationState.REGISTERED -> com.noxsip.app.ui.theme.Green500
-                                            st == SipRegistrationState.REGISTERING -> Amber500
-                                            st == SipRegistrationState.ERROR -> MaterialTheme.colorScheme.error
-                                            else -> MaterialTheme.colorScheme.outline
-                                        }
-                                        DropdownMenuItem(
-                                            text = {
-                                                Row(
-                                                    verticalAlignment = Alignment.CenterVertically,
-                                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                                ) {
-                                                    Box(
-                                                        modifier = Modifier
-                                                            .size(8.dp)
-                                                            .clip(CircleShape)
-                                                            .background(dot)
-                                                    )
-                                                    Text(
-                                                        acc.name.ifBlank { acc.username },
-                                                        fontWeight = if (acc.id == currentAccount?.id) FontWeight.Bold else FontWeight.Normal
-                                                    )
-                                                }
-                                            },
-                                            trailingIcon = {
-                                                if (acc.id == currentAccount?.id) {
-                                                    Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = com.noxsip.app.ui.theme.Green500, modifier = Modifier.size(18.dp))
-                                                }
-                                            },
-                                            onClick = {
-                                                showAccountMenu = false
-                                                doSelectAccount(acc.id)
-                                            }
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.width(8.dp))
-
-                        val pillColor = when (registrationState) {
-                            SipRegistrationState.REGISTERED -> com.noxsip.app.ui.theme.Green500
-                            SipRegistrationState.REGISTERING -> Amber500
-                            SipRegistrationState.ERROR -> MaterialTheme.colorScheme.error
-                            SipRegistrationState.UNREGISTERED -> MaterialTheme.colorScheme.outline
-                        }
-                        val pillLabel = when (registrationState) {
-                            SipRegistrationState.REGISTERED -> "Online"
-                            SipRegistrationState.REGISTERING -> if (registrationError != null) "Retrying" else "Connecting"
-                            SipRegistrationState.ERROR -> "Error"
-                            SipRegistrationState.UNREGISTERED -> "Offline"
-                        }
-
-                        Row(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(20.dp))
-                                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.76f))
-                                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(20.dp))
-                                .clickable {
-                                    navController.navigate(Screen.Account.route) {
-                                        popUpTo(navController.graph.startDestinationId) {
-                                            saveState = true
-                                        }
-                                        launchSingleTop = true
-                                        restoreState = true
-                                    }
-                                }
-                                .padding(horizontal = 12.dp, vertical = 5.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(8.dp)
-                                    .clip(CircleShape)
-                                    .background(pillColor)
-                            )
-                            Text(
-                                text = pillLabel,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
                         }
                     }
                 }
-            }
-        },
+            },
         bottomBar = {
             // কিবোর্ড খোলা থাকলে নিচের মেনু লুকাই, যাতে মেসেজ বক্স কিবোর্ডের ঠিক ওপরে বসে
             val imeOpen = WindowInsets.ime.getBottom(androidx.compose.ui.platform.LocalDensity.current) > 0

@@ -7,7 +7,9 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.os.PowerManager
 import android.net.ConnectivityManager
 import android.net.Network
@@ -36,6 +38,7 @@ class SipForegroundService : Service() {
     companion object {
         private const val TAG = "SipForegroundService"
         private const val NOTIFICATION_ID = 1001
+        private const val NO_DEFAULT_NETWORK_GRACE_MS = 1_200L
 
         const val ACTION_START = "com.noxsip.app.action.START"
         const val ACTION_STOP = "com.noxsip.app.action.STOP"
@@ -170,7 +173,8 @@ class SipForegroundService : Service() {
     private var netCallback: ConnectivityManager.NetworkCallback? = null
     private var lastNetwork: Network? = null
     private var networkLost = false
-    private var routeRecoveryPending = false
+    private val networkHandler = Handler(Looper.getMainLooper())
+    private var noNetworkCheck: Runnable? = null
 
     /** Wi-Fi ↔ মোবাইল ডেটা বদলালে বা নেটওয়ার্ক ফিরলে দ্রুত রি-রেজিস্টার */
     private fun registerNetworkWatch() {
@@ -179,9 +183,11 @@ class SipForegroundService : Service() {
             val cb = object : ConnectivityManager.NetworkCallback() {
                 override fun onAvailable(network: Network) {
                     val changed = lastNetwork != network
+                    noNetworkCheck?.let(networkHandler::removeCallbacks)
+                    noNetworkCheck = null
                     if (changed || networkLost) {
-                        Log.i(TAG, "Default network available/changed; waiting for its capabilities before restarting SIP")
-                        routeRecoveryPending = true
+                        Log.i(TAG, "Default network available/changed; restarting SIP on the new route")
+                        sipEngine.onNetworkChanged()
                     }
                     lastNetwork = network
                     networkLost = false
@@ -191,17 +197,12 @@ class SipForegroundService : Service() {
                     network: Network,
                     networkCapabilities: android.net.NetworkCapabilities
                 ) {
-                    // Do not synchronously query ConnectivityManager from this callback. INTERNET
-                    // means the route can carry IP traffic; VALIDATED is not required because
-                    // captive-portal checks can fail while a private SIP server is reachable.
+                    // Android calls this after onAvailable(). Do not synchronously query the
+                    // ConnectivityManager here; the available callback already starts recovery.
                     if (network == lastNetwork &&
                         networkCapabilities.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
                     ) {
-                        if (routeRecoveryPending) {
-                            routeRecoveryPending = false
-                            Log.i(TAG, "Default route can carry internet traffic; restarting SIP signaling")
-                            sipEngine.onNetworkChanged()
-                        }
+                        Log.d(TAG, "Current default network has INTERNET capability: $network")
                     }
                 }
 
@@ -209,13 +210,35 @@ class SipForegroundService : Service() {
                     if (lastNetwork == network) {
                         networkLost = true
                         lastNetwork = null
-                        routeRecoveryPending = true
-                        Log.i(TAG, "No default network; pausing SIP registration until a route returns")
-                        sipEngine.onNetworkUnavailable()
+                        Log.i(TAG, "Default route lost; allowing a short handover window before pausing SIP")
+                        val check = Runnable {
+                            noNetworkCheck = null
+                            if (lastNetwork != null || !networkLost) return@Runnable
+
+                            // Some Android builds deliver onLost during a handover even though
+                            // the replacement route is already active. Recheck outside the
+                            // callback to avoid blocking Android's connectivity callback thread.
+                            val current = cm.activeNetwork
+                            val capabilities = current?.let(cm::getNetworkCapabilities)
+                            if (current != null && capabilities?.hasCapability(
+                                    android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET
+                                ) == true
+                            ) {
+                                lastNetwork = current
+                                networkLost = false
+                                Log.i(TAG, "Found active default route after handover; restarting SIP")
+                                sipEngine.onNetworkChanged()
+                            } else {
+                                Log.i(TAG, "No replacement internet route; pausing SIP until connectivity returns")
+                                sipEngine.onNetworkUnavailable()
+                            }
+                        }
+                        noNetworkCheck = check
+                        networkHandler.postDelayed(check, NO_DEFAULT_NETWORK_GRACE_MS)
                     }
                 }
             }
-            cm.registerDefaultNetworkCallback(cb)
+            cm.registerDefaultNetworkCallback(cb, networkHandler)
             netCallback = cb
         } catch (e: Exception) {
             Log.w(TAG, "network watch failed: ${e.message}")
@@ -223,6 +246,8 @@ class SipForegroundService : Service() {
     }
 
     private fun unregisterNetworkWatch() {
+        noNetworkCheck?.let(networkHandler::removeCallbacks)
+        noNetworkCheck = null
         try {
             netCallback?.let {
                 (getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager).unregisterNetworkCallback(it)
