@@ -162,7 +162,12 @@ fun AutoCallScreen(
                 minLines = 3,
                 maxLines = 6,
                 label = { Text("Type or paste numbers (max 50)") },
-                supportingText = { Text("Bangladesh format: +8801XXXXXXXXX or 01XXXXXXXXX • Valid: ${manualNumbers.size}/50") },
+                supportingText = {
+                    Column {
+                        Text("Bangladesh format: +8801XXXXXXXXX or 01XXXXXXXXX • Valid: ${manualNumbers.size}/50")
+                        Text("If you enter more than 50, only the first 50 distinct valid numbers are used.", style = MaterialTheme.typography.labelSmall)
+                    }
+                },
                 placeholder = { Text("+88017XXXXXXXX\n017XXXXXXXX") }
             )
         }

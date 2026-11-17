@@ -89,10 +89,10 @@ object AutoCallPrefs {
                 val number = normalizeBangladeshMobile(token)
                 if (number == null) {
                     invalid++
-                } else if (!output.add(number)) {
+                } else if (number in output) {
                     duplicates++
-                } else if (maxRecipients != null && output.size > maxRecipients) {
-                    throw IllegalArgumentException("This file contains more than $maxRecipients valid numbers. Split it into smaller files to keep the call queue stable.")
+                } else if (maxRecipients == null || output.size < maxRecipients) {
+                    output.add(number)
                 }
             }
         return ImportResult("", output.toList(), scanned, invalid, duplicates)
