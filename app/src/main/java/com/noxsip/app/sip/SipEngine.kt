@@ -1,6 +1,8 @@
 package com.noxsip.app.sip
 
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
@@ -62,7 +64,23 @@ class SipEngine(private val context: Context) {
     private val core: Core get() = SipDialerApplication.core
 
     private var networkAvailable = true
-    @Volatile private var cellularNetwork = false
+    @Volatile private var cellularNetwork = run {
+        val connectivity = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+        val capabilities = connectivity?.let { manager ->
+            manager.activeNetwork?.let(manager::getNetworkCapabilities)
+        }
+        capabilities?.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) == true
+    }
+    /** Mobile TCP may be registered but then lose its signaling socket; remember a UDP fallback for this route. */
+    private val cellularUdpFallback = mutableSetOf<String>().apply {
+        if (cellularNetwork) {
+            addAll(
+                context.getSharedPreferences("sip_network_routes", Context.MODE_PRIVATE)
+                    .getStringSet("cellular_udp_accounts", emptySet())
+                    .orEmpty()
+            )
+        }
+    }
     private val configuredAccounts = mutableMapOf<String, SipAccountData>()
     private var pendingNetworkRecovery = false
     private var networkRecoveryTask: Runnable? = null
@@ -83,6 +101,8 @@ class SipEngine(private val context: Context) {
         mainHandler.post {
             if (isCellular != null && cellularNetwork != isCellular) {
                 cellularNetwork = isCellular
+                cellularUdpFallback.clear()
+                saveCellularTransportFallbacks()
                 Log.i(TAG, "Default route is ${if (isCellular) "mobile data" else "Wi-Fi/other"}; selecting the configured route transport")
             }
             networkAvailable = true
@@ -93,8 +113,62 @@ class SipEngine(private val context: Context) {
 
     private fun preferredTransport(account: SipAccountData, useBackup: Boolean): String = when {
         useBackup -> account.backupTransport.ifBlank { "UDP" }
+        cellularNetwork && account.id in cellularUdpFallback -> "UDP"
         cellularNetwork -> account.cellularTransport.ifBlank { "TCP" }
         else -> account.transport.ifBlank { "UDP" }
+    }
+
+    private fun isExplicitIoFailure(errorInfo: ErrorInfo?, reason: Reason?, message: String): Boolean {
+        if (reason != Reason.IOError && errorInfo?.reason != Reason.IOError) return false
+        val detail = "${errorInfo?.phrase.orEmpty()} $message".lowercase()
+        return detail.contains("io error") || detail.contains("i/o error")
+    }
+
+    private fun saveCellularTransportFallbacks() {
+        context.getSharedPreferences("sip_network_routes", Context.MODE_PRIVATE)
+            .edit()
+            .putStringSet("cellular_udp_accounts", cellularUdpFallback.toSet())
+            .apply()
+    }
+
+    /** Retry registration on UDP if the mobile TCP signaling socket itself reports an I/O error. */
+    private fun switchMobileTcpToUdpAfterIoError(id: String) {
+        mainHandler.post {
+            val configured = configuredAccounts[id] ?: return@post
+            val active = registeredData[id] ?: return@post
+            if (!cellularNetwork || id in backupActive ||
+                !configured.cellularTransport.equals("TCP", ignoreCase = true) ||
+                !active.transport.equals("TCP", ignoreCase = true) ||
+                !cellularUdpFallback.add(id)
+            ) return@post
+
+            saveCellularTransportFallbacks()
+
+            Log.w(TAG, "Mobile TCP SIP I/O error for $id; switching registration to UDP")
+            lateinit var retry: Runnable
+            retry = Runnable {
+                if (!cellularNetwork) {
+                    cellularUdpFallback.remove(id)
+                    saveCellularTransportFallbacks()
+                    return@Runnable
+                }
+                if (core.callsNb > 0) {
+                    mainHandler.postDelayed(retry, 500L)
+                    return@Runnable
+                }
+                registerOnEndpoint(
+                    configured.copy(transport = "UDP"),
+                    select = currentAccount?.id == id,
+                    useBackup = false
+                )
+                setAccState(
+                    id,
+                    SipRegistrationState.REGISTERING,
+                    error = "Mobile TCP signaling dropped; reconnecting over UDP."
+                )
+            }
+            mainHandler.postDelayed(retry, 500L)
+        }
     }
 
     /** Tell Linphone to close stale SIP/NAT sockets while Android has no default internet route. */
@@ -791,6 +865,10 @@ class SipEngine(private val context: Context) {
                     regTimeouts.remove(id)?.let { mainHandler.removeCallbacks(it) }
                     val n = (failureCounts[id] ?: 0) + 1
                     failureCounts[id] = n
+                    if (cellularNetwork && isExplicitIoFailure(errorInfo, reason, message)) {
+                        switchMobileTcpToUdpAfterIoError(id)
+                        return
+                    }
                     val (msg, fatal) = describeFailure(errorInfo, reason, message)
                     SipConnectionDiagnostics.failed(context, id, msg)
                     Log.w(TAG, "Registration failed [$id] (#$n, fatal=$fatal): $msg")
@@ -1067,10 +1145,25 @@ class SipEngine(private val context: Context) {
                     // কল কেন ব্যর্থ হলো (সার্ভারের কোড, যেমন 403/404/503) জানাতে
                     val failure = try {
                         val ei = call.errorInfo
+                        val callReason = call.reason
                         if (state == Call.State.Error || (ei != null && ei.protocolCode >= 300)) {
                             val code = ei?.protocolCode ?: 0
                             val phrase = ei?.phrase.orEmpty().ifBlank { call.reason.toString() }
-                            if (code > 0) "Call failed: $code $phrase" else "Call failed: ${message.ifBlank { phrase }}"
+                            if (isExplicitIoFailure(ei, callReason, message)) {
+                                val outgoing = call.dir == Call.Dir.Outgoing
+                                val accountId = currentAccount?.id
+                                val activeTransport = accountId?.let { registeredData[it]?.transport }.orEmpty()
+                                if (outgoing && cellularNetwork && activeTransport.equals("TCP", ignoreCase = true)) {
+                                    accountId?.let(::switchMobileTcpToUdpAfterIoError)
+                                    "Call failed: mobile SIP connection dropped; reconnecting over UDP."
+                                } else {
+                                    "Call failed: SIP signaling connection dropped (I/O error). Reconnecting."
+                                }
+                            } else if (code > 0) {
+                                "Call failed: $code $phrase"
+                            } else {
+                                "Call failed: ${message.ifBlank { phrase }}"
+                            }
                         } else null
                     } catch (_: Exception) {
                         null
@@ -1332,6 +1425,7 @@ class SipEngine(private val context: Context) {
     fun unregisterAccount(id: String) {
         primaryProbeTasks.remove(id)?.let { mainHandler.removeCallbacks(it) }
         backupActive.remove(id)
+        if (cellularUdpFallback.remove(id)) saveCellularTransportFallbacks()
         registrationRetries.remove(id)?.let { mainHandler.removeCallbacks(it) }
         registrationRetryAttempts.remove(id)
         regTimeouts.remove(id)?.let { mainHandler.removeCallbacks(it) }

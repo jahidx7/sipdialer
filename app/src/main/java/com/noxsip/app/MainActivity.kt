@@ -454,7 +454,7 @@ fun SipDialerApp(
             modifier = Modifier
                 .fillMaxSize()
                 .statusBarsPadding()
-                .padding(top = 24.dp)
+                .padding(top = 20.dp)
                 .padding(paddingValues)
         ) {
             composable(Screen.Dialer.route) {
@@ -652,7 +652,7 @@ fun SipDialerApp(
             modifier = Modifier
                 .align(Alignment.TopEnd)
                 .statusBarsPadding()
-                .padding(top = 4.dp, end = 12.dp)
+                .padding(top = 0.dp, end = 12.dp)
                 .shadow(6.dp, RoundedCornerShape(20.dp))
                 .clip(RoundedCornerShape(20.dp))
                 .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.92f))
@@ -664,7 +664,7 @@ fun SipDialerApp(
                         restoreState = true
                     }
                 }
-                .padding(horizontal = 12.dp, vertical = 5.dp),
+                .padding(horizontal = 12.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {

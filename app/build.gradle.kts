@@ -58,8 +58,8 @@ android {
         create("lite") {
             dimension = "edition"
             applicationIdSuffix = ".lite"
-            versionCode = 18
-            versionName = "1.1.8"
+            versionCode = 19
+            versionName = "1.1.9"
             buildConfigField("String", "VERSION_URL", "\"$updateUrl\"")
         }
     }

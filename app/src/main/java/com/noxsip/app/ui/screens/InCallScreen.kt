@@ -105,15 +105,15 @@ fun InCallScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .systemBarsPadding()
-                .padding(start = 24.dp, end = 24.dp, top = 8.dp, bottom = 40.dp),
+                .navigationBarsPadding()
+                .padding(start = 24.dp, end = 24.dp, top = 4.dp, bottom = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.SpaceBetween
         ) {
             // Top Caller Header
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.padding(top = 36.dp)
+                modifier = Modifier.padding(top = 0.dp)
             ) {
                 Surface(
                     color = MaterialTheme.colorScheme.primaryContainer,
@@ -129,7 +129,7 @@ fun InCallScreen(
                     )
                 }
 
-                Spacer(modifier = Modifier.height(40.dp))
+                Spacer(modifier = Modifier.height(28.dp))
 
                 Text(
                     text = contactName ?: cleanName,
