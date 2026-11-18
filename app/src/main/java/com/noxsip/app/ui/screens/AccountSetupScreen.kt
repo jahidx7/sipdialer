@@ -224,6 +224,7 @@ fun AccountSetupScreen(
     val isThisActive = formTarget != null && formTarget?.id == currentAccount?.id
     // ফর্মে খোলা অ্যাকাউন্টের নিজস্ব সংযোগ-অবস্থা
     val formState = formTarget?.let { accountStates[it.id] } ?: SipRegistrationState.UNREGISTERED
+    val pageInset = (androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp / 30).coerceIn(10, 22).dp
     val trimmedName = accountName.trim()
     val nameTaken = accounts.any { it.id != formTarget?.id && it.name.equals(trimmedName, ignoreCase = true) }
 
@@ -232,8 +233,8 @@ fun AccountSetupScreen(
         modifier = Modifier
             .fillMaxSize()
             .then(if (settingsTab == 8) Modifier else Modifier.verticalScroll(rememberScrollState()))
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+            .padding(horizontal = pageInset, vertical = 6.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         // Settings home: list of sections (tap a row to open it); back arrow / back button returns here
         androidx.activity.compose.BackHandler(enabled = settingsTab != -1) { settingsTab = -1 }
@@ -257,19 +258,19 @@ fun AccountSetupScreen(
             ) {
                 androidx.compose.foundation.layout.Box(
                     modifier = Modifier
-                        .size(44.dp)
+                        .size(32.dp)
                         .clip(androidx.compose.foundation.shape.CircleShape)
                         .background(Color(0xFFDC2626).copy(alpha = 0.14f)),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(Icons.Filled.FiberManualRecord, contentDescription = null, tint = Color(0xFFDC2626), modifier = Modifier.size(24.dp))
+                    Icon(Icons.Filled.FiberManualRecord, contentDescription = null, tint = Color(0xFFDC2626), modifier = Modifier.size(18.dp))
                 }
-                Spacer(modifier = Modifier.width(14.dp))
+                Spacer(modifier = Modifier.width(8.dp))
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("Auto Call Recording", fontSize = 16.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
+                    Text("Auto Call Recording", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
                     Text(
                         if (autoRecordCalls) "On: every call is recorded" else "Off: calls are not recorded",
-                        fontSize = 12.sp,
+                        fontSize = 11.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
@@ -297,19 +298,19 @@ fun AccountSetupScreen(
             ) {
                 Box(
                     modifier = Modifier
-                        .size(44.dp)
+                        .size(32.dp)
                         .clip(CircleShape)
                         .background(MaterialTheme.colorScheme.tertiaryContainer),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(Icons.Filled.CallReceived, contentDescription = null, tint = MaterialTheme.colorScheme.onTertiaryContainer, modifier = Modifier.size(24.dp))
+                    Icon(Icons.Filled.CallReceived, contentDescription = null, tint = MaterialTheme.colorScheme.onTertiaryContainer, modifier = Modifier.size(18.dp))
                 }
-                Spacer(modifier = Modifier.width(14.dp))
+                Spacer(modifier = Modifier.width(8.dp))
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("Auto Answer", fontSize = 16.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
+                    Text("Auto Answer", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
                     Text(
                         if (autoAnswerCalls) "On: incoming SIP calls are answered automatically" else "Off: answer incoming SIP calls manually",
-                        fontSize = 12.sp,
+                        fontSize = 11.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
@@ -328,8 +329,8 @@ fun AccountSetupScreen(
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f))
             ) {
                 Column(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                    verticalArrangement = Arrangement.spacedBy(5.dp)
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Filled.MusicNote, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary, modifier = Modifier.size(22.dp))
@@ -338,7 +339,7 @@ fun AccountSetupScreen(
                             Text("Auto Answer Audio", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                             Text(
                                 autoAnswerAudioName?.let { "Selected: $it" } ?: "Choose a song or audio file to play to the caller",
-                                fontSize = 12.sp,
+                                fontSize = 11.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 2,
                                 overflow = TextOverflow.Ellipsis
@@ -1541,13 +1542,13 @@ private fun SettingsRow(
             .background(MaterialTheme.colorScheme.surfaceContainerLow)
             .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f), RoundedCornerShape(12.dp))
             .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 12.dp),
+            .padding(horizontal = 10.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         // রঙিন গোল ব্যাকগ্রাউন্ডে আইকন
         androidx.compose.foundation.layout.Box(
             modifier = Modifier
-                .size(44.dp)
+                .size(32.dp)
                 .clip(androidx.compose.foundation.shape.CircleShape)
                 .background(accent.copy(alpha = 0.14f)),
             contentAlignment = Alignment.Center
@@ -1556,21 +1557,21 @@ private fun SettingsRow(
                 icon,
                 contentDescription = null,
                 tint = accent,
-                modifier = Modifier.size(24.dp)
+                modifier = Modifier.size(18.dp)
             )
         }
-        Spacer(modifier = Modifier.width(14.dp))
+        Spacer(modifier = Modifier.width(8.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = title,
-                fontSize = 16.sp,
+                fontSize = 14.sp,
                 fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onSurface
             )
             Spacer(modifier = Modifier.height(1.dp))
             Text(
                 text = subtitle,
-                fontSize = 12.sp,
+                fontSize = 11.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
