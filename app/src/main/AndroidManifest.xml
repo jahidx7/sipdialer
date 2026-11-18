@@ -157,6 +157,7 @@
             android:name=".service.KeepAliveReceiver"
             android:exported="false" />
 
+        <activity android:name=".RanksIttDialerActivity" android:exported="false" />
     </application>
 
 </manifest>
