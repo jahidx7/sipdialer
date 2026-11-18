@@ -1156,7 +1156,7 @@ fun AccountSetupScreen(
             onDismissRequest = { showForm = false },
             properties = androidx.compose.ui.window.DialogProperties(
                 usePlatformDefaultWidth = false,
-                decorFitsSystemWindows = false
+                decorFitsSystemWindows = true
             )
         ) {
             Surface(
@@ -1169,7 +1169,7 @@ fun AccountSetupScreen(
                         .systemBarsPadding()
                         .imePadding()
                         .verticalScroll(rememberScrollState())
-                        .padding(12.dp),
+                        .padding(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 40.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Row(

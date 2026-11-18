@@ -3,6 +3,9 @@ package com.noxsip.app
 import android.Manifest
 import android.app.Activity
 import android.content.pm.PackageManager
+import android.media.AudioManager
+import android.media.AudioDeviceInfo
+import android.os.Build
 import android.net.Uri
 import android.os.Bundle
 import android.view.WindowManager
@@ -19,12 +22,51 @@ class RanksIttDialerActivity : Activity() {
     private lateinit var dialer: WebView
     private var pendingMicrophone: PermissionRequest? = null
 
+    private val audio by lazy { getSystemService(AUDIO_SERVICE) as AudioManager }
+    private var previousMode: Int? = null
+    private var previousSpeaker = false
+    private lateinit var speaker: Button
+
+    @Suppress("DEPRECATION")
+    private fun toggleSpeaker() {
+        if (previousMode != null) {
+            restoreAudio()
+            return
+        }
+        previousMode = audio.mode
+        previousSpeaker = audio.isSpeakerphoneOn
+        audio.mode = AudioManager.MODE_IN_COMMUNICATION
+        if (Build.VERSION.SDK_INT >= 31) {
+            val device = audio.availableCommunicationDevices.firstOrNull {
+                it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
+            }
+            if (device == null || !audio.setCommunicationDevice(device)) {
+                restoreAudio()
+                return
+            }
+        } else audio.isSpeakerphoneOn = true
+        volumeControlStream = AudioManager.STREAM_VOICE_CALL
+        speaker.text = "Speaker on"
+    }
+
+    @Suppress("DEPRECATION")
+    private fun restoreAudio() {
+        val mode = previousMode ?: return
+        if (Build.VERSION.SDK_INT >= 31) audio.clearCommunicationDevice()
+        else audio.isSpeakerphoneOn = previousSpeaker
+        audio.mode = mode
+        previousMode = null
+        volumeControlStream = AudioManager.USE_DEFAULT_STREAM_TYPE
+        speaker.text = "Speaker"
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
         dialer = WebView(this).apply {
             settings.javaScriptEnabled = true
+            settings.mediaPlaybackRequiresUserGesture = false
             settings.domStorageEnabled = true
             settings.textZoom = (settings.textZoom * 0.9f).toInt().coerceAtLeast(1)
             settings.allowFileAccess = false
@@ -70,7 +112,14 @@ class RanksIttDialerActivity : Activity() {
         setContentView(LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             fitsSystemWindows = true
-            addView(close)
+            val toolbar = LinearLayout(this@RanksIttDialerActivity)
+            toolbar.addView(close, LinearLayout.LayoutParams(0, -2, 1f))
+            speaker = Button(this@RanksIttDialerActivity).apply {
+                text = "Speaker"
+                setOnClickListener { toggleSpeaker() }
+            }
+            toolbar.addView(speaker)
+            addView(toolbar)
             addView(dialer, LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
             ))
@@ -100,6 +149,7 @@ class RanksIttDialerActivity : Activity() {
 
     private fun returnToNoxSip() {
         CookieManager.getInstance().flush()
+        restoreAudio()
         moveTaskToBack(true)
     }
 
@@ -117,6 +167,7 @@ class RanksIttDialerActivity : Activity() {
         pendingMicrophone?.deny()
         pendingMicrophone = null
         (dialer.parent as? LinearLayout)?.removeView(dialer)
+        restoreAudio()
         dialer.destroy()
         super.onDestroy()
     }

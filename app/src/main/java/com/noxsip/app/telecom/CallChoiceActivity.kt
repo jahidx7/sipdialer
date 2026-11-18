@@ -143,8 +143,8 @@ class CallChoiceActivity : ComponentActivity() {
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .heightIn(min = 42.dp)
-                                    .clip(RoundedCornerShape(24.dp))
+                                    .heightIn(min = 48.dp)
+                                    .clip(RoundedCornerShape(14.dp))
                                     .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                                     .clickable { finish() },
                                 contentAlignment = Alignment.Center
@@ -174,8 +174,8 @@ private fun ChoicePillButton(
 ) {
     Box(
         modifier = modifier
-            .heightIn(min = 42.dp)
-            .clip(RoundedCornerShape(24.dp))
+            .heightIn(min = 48.dp)
+            .clip(RoundedCornerShape(14.dp))
             .background(bgColor)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
