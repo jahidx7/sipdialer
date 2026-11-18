@@ -132,16 +132,22 @@ object BackupManager {
             root.optJSONArray("accounts")?.let { arr ->
                 for (i in 0 until arr.length()) {
                     val o = arr.getJSONObject(i)
+                    val sipTransport = o.optString("transport", "UDP")
+                    val savedCellularTransport = o.optString("cellularTransport", sipTransport)
+                    val cellularTransport = if (
+                        sipTransport.equals("UDP", ignoreCase = true) &&
+                        savedCellularTransport.equals("TCP", ignoreCase = true)
+                    ) "UDP" else savedCellularTransport
                     accounts.add(
                         SipAccountData(
                             id = o.optString("id"), name = o.optString("name"),
                             username = o.optString("username"), password = o.optString("password"),
                             domain = o.optString("domain"), port = o.optInt("port", 5060),
-                            transport = o.optString("transport", "UDP"), proxy = o.optString("proxy"),
+                            transport = sipTransport, proxy = o.optString("proxy"),
                             displayName = o.optString("displayName"), autoStart = o.optBoolean("autoStart", false),
                             backupServer = o.optString("backupServer"), backupPort = o.optInt("backupPort", 5060),
                             backupTransport = o.optString("backupTransport", "UDP"),
-                            cellularTransport = o.optString("cellularTransport", "TCP")
+                            cellularTransport = cellularTransport
                         )
                     )
                 }

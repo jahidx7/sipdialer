@@ -21,5 +21,5 @@ data class SipAccountData(
     val backupPort: Int = 5060,
     val backupTransport: String = "UDP",
     /** Preferred SIP signaling transport while Android is using mobile data. */
-    val cellularTransport: String = "TCP"
+    val cellularTransport: String = "UDP"
 )

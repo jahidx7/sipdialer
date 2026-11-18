@@ -149,7 +149,7 @@ class SipEngine(private val context: Context) {
         val configured = configuredAccounts[id] ?: return false
         val active = registeredData[id] ?: return false
         if (!cellularNetwork || !networkAvailable || id in backupActive ||
-            !configured.cellularTransport.equals("TCP", ignoreCase = true)
+            configured.cellularTransport.uppercase() !in setOf("TCP", "UDP")
         ) return false
 
         val currentTransport = active.transport.uppercase()

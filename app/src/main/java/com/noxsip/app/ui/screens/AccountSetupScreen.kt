@@ -203,7 +203,7 @@ fun AccountSetupScreen(
     var domain by remember(formTarget) { mutableStateOf(formTarget?.domain ?: "") }
     var port by remember(formTarget) { mutableStateOf(formTarget?.port?.toString() ?: "5060") }
     var transport by remember(formTarget) { mutableStateOf(formTarget?.transport ?: "UDP") }
-    var cellularTransport by remember(formTarget) { mutableStateOf(formTarget?.cellularTransport ?: "TCP") }
+    var cellularTransport by remember(formTarget) { mutableStateOf(formTarget?.cellularTransport ?: "UDP") }
     var proxy by remember(formTarget) { mutableStateOf(formTarget?.proxy ?: "") }
     var backupServer by remember(formTarget) { mutableStateOf(formTarget?.backupServer ?: "") }
     var backupPort by remember(formTarget) { mutableStateOf(formTarget?.backupPort?.toString() ?: "5060") }
@@ -1359,7 +1359,7 @@ fun AccountSetupScreen(
                             }
                         }
                         Text(
-                            "TCP is selected for mobile data by default. The SIP server must listen on TCP at the configured port. STUN/ICE assists media routing; it cannot fix a SIP signaling timeout.",
+                            "Mobile data starts with the selected SIP transport (UDP by default) and can fall back to TCP or UDP after a signaling timeout.",
                             fontSize = 10.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

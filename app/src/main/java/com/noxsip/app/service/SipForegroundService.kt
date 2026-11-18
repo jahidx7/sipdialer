@@ -174,6 +174,7 @@ class SipForegroundService : Service() {
     private var lastNetwork: Network? = null
     private var lastIsCellular: Boolean? = null
     private var networkLost = false
+    private var routeChangeAwaitingCapabilities = false
     private val networkHandler = Handler(Looper.getMainLooper())
     private var noNetworkCheck: Runnable? = null
 
@@ -183,12 +184,15 @@ class SipForegroundService : Service() {
             val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
             val cb = object : ConnectivityManager.NetworkCallback() {
                 override fun onAvailable(network: Network) {
-                    val changed = lastNetwork != network
+                    // Android reports the already-active default network when a callback is first
+                    // registered. That initial notification is not a handover and must not reset SIP.
+                    val changed = lastNetwork != null && lastNetwork != network
+                    val restored = networkLost
                     noNetworkCheck?.let(networkHandler::removeCallbacks)
                     noNetworkCheck = null
-                    if (changed || networkLost) {
-                        Log.i(TAG, "Default network available/changed; restarting SIP on the new route")
-                        sipEngine.onNetworkChanged()
+                    if (changed || restored) {
+                        routeChangeAwaitingCapabilities = true
+                        Log.i(TAG, "Default network changed/restored; waiting for its transport before SIP recovery")
                     }
                     lastNetwork = network
                     networkLost = false
@@ -198,16 +202,21 @@ class SipForegroundService : Service() {
                     network: Network,
                     networkCapabilities: android.net.NetworkCapabilities
                 ) {
-                    // Android calls this after onAvailable(). Do not synchronously query the
-                    // ConnectivityManager here; the available callback already starts recovery.
+                    // Android calls this after onAvailable(). Learn the initial network type without
+                    // treating startup as a handover; recover only after a real route/type change.
                     if (network == lastNetwork &&
                         networkCapabilities.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
                     ) {
                         val isCellular = networkCapabilities.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR)
-                        if (lastIsCellular != isCellular) {
-                            lastIsCellular = isCellular
+                        val previousType = lastIsCellular
+                        val routeChanged = routeChangeAwaitingCapabilities
+                        lastIsCellular = isCellular
+                        routeChangeAwaitingCapabilities = false
+                        if (routeChanged || (previousType != null && previousType != isCellular)) {
                             Log.i(TAG, "Default network transport changed: ${if (isCellular) "mobile data" else "Wi-Fi/other"}")
                             sipEngine.onNetworkChanged(isCellular)
+                        } else if (previousType == null) {
+                            Log.i(TAG, "Initial default network detected (${if (isCellular) "mobile data" else "Wi-Fi/other"}); leaving SIP registration untouched")
                         } else {
                             Log.d(TAG, "Current default network has INTERNET capability: $network")
                         }
@@ -235,10 +244,12 @@ class SipForegroundService : Service() {
                                 lastNetwork = current
                                 networkLost = false
                                 lastIsCellular = capabilities.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR)
+                                routeChangeAwaitingCapabilities = false
                                 Log.i(TAG, "Found active default route after handover; restarting SIP")
                                 sipEngine.onNetworkChanged(lastIsCellular)
                             } else {
                                 lastIsCellular = null
+                                routeChangeAwaitingCapabilities = false
                                 Log.i(TAG, "No replacement internet route; pausing SIP until connectivity returns")
                                 sipEngine.onNetworkUnavailable()
                             }
