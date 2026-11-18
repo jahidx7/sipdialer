@@ -158,6 +158,7 @@ class SipForegroundService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        com.noxsip.app.util.Diagnosis.record("Service", "Started")
         isRunning = true
         sipEngine = SipEngine.getInstance(applicationContext)
 
@@ -216,7 +217,7 @@ class SipForegroundService : Service() {
                             Log.i(TAG, "Default network transport changed: ${if (isCellular) "mobile data" else "Wi-Fi/other"}")
                             sipEngine.onNetworkChanged(isCellular)
                         } else if (previousType == null) {
-                            Log.i(TAG, "Initial default network detected (${if (isCellular) "mobile data" else "Wi-Fi/other"}); leaving SIP registration untouched")
+                            sipEngine.onInitialNetwork(isCellular)
                         } else {
                             Log.d(TAG, "Current default network has INTERNET capability: $network")
                         }
@@ -408,6 +409,7 @@ class SipForegroundService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        com.noxsip.app.util.Diagnosis.record("Service", "Stopped")
         unregisterNetworkWatch()
         releaseStandbyLocks()
         isRunning = false

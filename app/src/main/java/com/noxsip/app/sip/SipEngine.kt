@@ -1,5 +1,6 @@
 package com.noxsip.app.sip
 
+import com.noxsip.app.util.Diagnosis
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
@@ -84,6 +85,7 @@ class SipEngine(private val context: Context) {
     private val cellularTransportSwitchPending = HashSet<String>()
     private val cellularTransportSwitchCount = mutableMapOf<String, Int>()
     private val configuredAccounts = mutableMapOf<String, SipAccountData>()
+    private val mobileProfile = mutableMapOf<String, Boolean>()
     private var pendingNetworkRecovery = false
     private var networkRecoveryTask: Runnable? = null
     private var networkRestartEventGraceUntil = 0L
@@ -98,9 +100,14 @@ class SipEngine(private val context: Context) {
         }
     }
 
+    fun onInitialNetwork(isCellular: Boolean) {
+        if (cellularNetwork != isCellular) onNetworkChanged(isCellular)
+    }
+
     /** Rebuild Linphone signaling channels on the new Android default-network route. */
     fun onNetworkChanged(isCellular: Boolean? = null) {
         mainHandler.post {
+            Diagnosis.record("Network", "Default route changed")
             if (isCellular != null && cellularNetwork != isCellular) {
                 cellularNetwork = isCellular
                 cellularUdpFallback.clear()
@@ -176,6 +183,7 @@ class SipEngine(private val context: Context) {
         if (targetTransport == "UDP") cellularUdpFallback.add(id)
         else cellularUdpFallback.remove(id)
         saveCellularTransportFallbacks()
+        Diagnosis.record("Route", "Recovery: $currentTransport to $targetTransport")
         Log.w(TAG, "Mobile SIP $currentTransport failed for $id ($cause); trying $targetTransport")
 
         lateinit var retry: Runnable
@@ -210,6 +218,7 @@ class SipEngine(private val context: Context) {
 
     /** Tell Linphone to close stale SIP/NAT sockets while Android has no default internet route. */
     fun onNetworkUnavailable() {
+        Diagnosis.record("Network", "Default route lost")
         mainHandler.post {
             networkAvailable = false
             pendingNetworkRecovery = false
@@ -277,7 +286,7 @@ class SipEngine(private val context: Context) {
                             val configured = configuredAccounts[id] ?: active
                             val usingBackup = id in backupActive
                             val targetTransport = preferredTransport(configured, usingBackup)
-                            if (!active.transport.equals(targetTransport, ignoreCase = true)) {
+                            if (mobileProfile[id] != cellularNetwork || !active.transport.equals(targetTransport, ignoreCase = true)) {
                                 val accountForRoute = configured.copy(transport = targetTransport)
                                 Log.i(TAG, "Re-registering $id over $targetTransport after route change")
                                 registerOnEndpoint(accountForRoute, select = currentAccount?.id == id, useBackup = usingBackup)
@@ -478,6 +487,7 @@ class SipEngine(private val context: Context) {
     private val sipLogListener = object : LoggingServiceListener {
         override fun onLogMessageWritten(service: LoggingService, domain: String, level: LogLevel, message: String) {
             try {
+                Diagnosis.signaling(message)
                 // সার্ভার থেকে আসা INVITE (নতুন বা পুনঃপ্রেরিত); আমাদের পাঠানো বার্তা বাদ
                 val isInboundInvite = (message.contains("new bytes from") && message.contains("INVITE sip:")) ||
                         message.startsWith("INVITE sip:")
@@ -598,7 +608,7 @@ class SipEngine(private val context: Context) {
         regTimeouts.remove(id)?.let { mainHandler.removeCallbacks(it) }
         val timeout = makeRegistrationTimeout(id)
         regTimeouts[id] = timeout
-        mainHandler.postDelayed(timeout, REGISTRATION_TIMEOUT_MS)
+        mainHandler.postDelayed(timeout, if (cellularNetwork) 15_000L else REGISTRATION_TIMEOUT_MS)
     }
 
     private fun makeRegistrationTimeout(id: String): Runnable = Runnable {
@@ -607,6 +617,7 @@ class SipEngine(private val context: Context) {
             val route = SipConnectionDiagnostics.snapshot(context, id)
             val transport = route.transport
             val port = route.port
+            Diagnosis.record("Registration error", "No response before local registration timer; $transport/$port")
             val timeoutMessage = "No response from SIP server ($transport port $port). Retrying automatically; check the Domain/IP, port, and internet if this continues."
             synchronized(cellularTransportSwitchPending) { cellularTransportSwitchPending.remove(id) }
             if (cellularNetwork && switchCellularTransportAfterFailure(id, timeoutMessage)) return@Runnable
@@ -883,8 +894,10 @@ class SipEngine(private val context: Context) {
             reason: Reason?,
             message: String
         ) {
+            Diagnosis.record(if (state == RegistrationState.Failed) "Registration error" else "Registration", "$state; SIP code=${errorInfo?.protocolCode ?: 0}; reason=$reason")
             when (state) {
-                RegistrationState.Ok, RegistrationState.Refreshing -> {
+                RegistrationState.Refreshing -> Unit
+                RegistrationState.Ok -> {
                     synchronized(cellularTransportSwitchPending) { cellularTransportSwitchPending.remove(id) }
                     if (state == RegistrationState.Ok) {
                         synchronized(cellularTransportSwitchCount) { cellularTransportSwitchCount.remove(id) }
@@ -963,7 +976,21 @@ class SipEngine(private val context: Context) {
             state: Call.State,
             message: String
         ) {
+            val code = call.errorInfo?.protocolCode ?: 0
+            val kind = when (state) {
+                Call.State.Error -> "Call error"
+                Call.State.Connected -> "Connected"
+                else -> "Call"
+            }
+            val callId = call.callLog?.callId?.hashCode()?.toUInt()?.toString(16) ?: "pending"
+            val result = if (code > 0) "code=$code" else "no protocol code reported"
+            Diagnosis.record(kind, "call#$callId ${call.dir} $state; $result; SDK reason=${call.reason}")
             Log.d(TAG, "Call state: $state - $message")
+            if (state == Call.State.End || state == Call.State.Error) {
+                _callQuality.value?.let { q ->
+                    Diagnosis.record("Media", "call#$callId last sample: ${q.codec}; up/down ${q.upKbps}/${q.downKbps} kbps; loss ${q.lossPercent}%; jitter ${q.jitterMs} ms; RTT ${q.rttMs} ms")
+                }
+            }
             val remoteAddress = call.remoteAddress.asStringUriOnly()
 
             when (state) {
@@ -1307,7 +1334,7 @@ class SipEngine(private val context: Context) {
         if (useBackup && account.backupServer.isBlank()) return
         if (select) currentAccount = configuredAccounts[id] ?: account
         val st = _accountStates.value[id]
-        if (registeredData[id] == account &&
+        if (mobileProfile[id] == cellularNetwork && registeredData[id] == account &&
             ((id in backupActive) == useBackup) &&
             (st == SipRegistrationState.REGISTERED || st == SipRegistrationState.REGISTERING)
         ) {
@@ -1357,7 +1384,7 @@ class SipEngine(private val context: Context) {
             core.incTimeout = 35
 
             try {
-                core.config.setInt("sip", "keepalive_period", 10000)
+                core.config.setInt("sip", "keepalive_period", if (cellularNetwork) 15000 else 10000)
                 core.config.setInt("sip", "use_rport", 1)
                 core.config.setInt("sip", "contact_autorewrite", 1)
                 core.config.setInt("sip", "guess_hostname", 1)
@@ -1449,15 +1476,17 @@ class SipEngine(private val context: Context) {
             val natPolicy = core.createNatPolicy().apply {
                 // STUN discovers a server-reflexive media candidate; ICE uses it during SDP
                 // negotiation. SIP signaling still requires a reachable PBX transport.
-                stunServer = "stun.l.google.com:19302"
-                isStunEnabled = true
-                isIceEnabled = true
+                if (!cellularNetwork) stunServer = "stun.l.google.com:19302"
+                isStunEnabled = !cellularNetwork
+                isIceEnabled = !cellularNetwork
                 isTurnEnabled = false
                 isUpnpEnabled = false
             }
             accountParams.natPolicy = natPolicy
 
             val linphoneAccount = core.createAccount(accountParams)
+            mobileProfile[id] = cellularNetwork
+            Diagnosis.record("Route", "SIP $selectedTransport/$effectivePort; ICE and STUN " + if (cellularNetwork) "off (Beta mobile profile)" else "on")
             registeredData[id] = account
             SipConnectionDiagnostics.endpoint(context, id, cleanServerHost, effectivePort, selectedTransport, usingBackup)
             SipConnectionDiagnostics.attempted(context, id)
@@ -1524,7 +1553,13 @@ class SipEngine(private val context: Context) {
     /**
      * SIP কল করুন
      */
+    private fun rejectLocalCall(detail: String): Boolean {
+        Diagnosis.record("Call error", "Outgoing: $detail")
+        return false
+    }
+
     fun makeCall(rawTarget: String): Boolean {
+        Diagnosis.record("Call", "Outgoing dial requested")
         return try {
             val selectedLinphoneAccount = currentAccount?.let { core.getAccountByIdkey(it.id) }
             val decoded = Uri.decode(rawTarget)
@@ -1534,20 +1569,19 @@ class SipEngine(private val context: Context) {
                 .replace("-", "")
                 .trim()
 
-            if (decoded.isEmpty()) return false
+            if (decoded.isEmpty()) return rejectLocalCall("Empty destination")
 
             val address = if (decoded.contains("@")) {
                 "sip:$decoded"
             } else {
                 val domain = selectedLinphoneAccount?.params?.identityAddress?.domain
                 if (domain.isNullOrEmpty()) {
-                    Log.e(TAG, "Cannot make call: selected SIP account is not registered")
-                    return false
+                    return rejectLocalCall("Selected account has no SIP domain")
                 }
                 "sip:$decoded@$domain"
             }
 
-            val addr = Factory.instance().createAddress(address) ?: return false
+            val addr = Factory.instance().createAddress(address) ?: return rejectLocalCall("Invalid SIP address")
             val params = core.createCallParams(null)
             params?.mediaEncryption = MediaEncryption.None
             // আউটগোয়িং কল সবসময় নির্বাচিত অ্যাকাউন্ট দিয়ে
@@ -1562,11 +1596,11 @@ class SipEngine(private val context: Context) {
             _callMediaReady.value = false
             _callState.value = SipCallState.Idle
             val call = core.inviteAddressWithParams(addr, params!!)
-            Log.i(TAG, "Calling remote party")
-            call != null
+            if (call == null) return rejectLocalCall("SDK declined to create call")
+            true
         } catch (e: Exception) {
             Log.e(TAG, "Make call failed", e)
-            false
+            rejectLocalCall(e.javaClass.simpleName)
         }
     }
 

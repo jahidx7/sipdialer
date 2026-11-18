@@ -140,4 +140,4 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --title "NoxSIP Lite ${APP_VERSION}" \
-            --notes "NoxSIP Lite 1.2.1 aligns mobile startup with the working Beta behavior: Android's initial default-network callback records Wi-Fi/mobile type without restarting SIP registration; recovery runs only after a real route or transport change. Existing UDP SIP accounts migrate from Lite's old automatic TCP mobile default to UDP, matching Beta, while retaining TCP fallback after a signaling timeout. The app handles SIP I/O/no-response failures before backup/retry and does not redial a failed call. STUN plus ICE remains enabled for media using stun.l.google.com:19302; the PBX must still accept SIP signaling on the selected transport. The build keeps the same package ID and persistent v2 signing key for in-place updates. Keep the ANDROID_SIGNING_PASSWORD secret and encrypted v2 signing-key release unchanged."
+            --notes "Lite 1.3.0 matches Beta cellular STUN/ICE and keep-alive settings and adds Settings → Diagnosis with local event history, call summary, copy and clear."

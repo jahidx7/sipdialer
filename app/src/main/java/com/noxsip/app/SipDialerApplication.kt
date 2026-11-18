@@ -124,11 +124,13 @@ class SipDialerApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         instance = this
+        com.noxsip.app.util.Diagnosis.start(this)
         com.noxsip.app.ui.theme.UiTextScale.load(this)
         com.noxsip.app.ui.theme.ThemeModePrefs.load(this)
 
         registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
             override fun onActivityResumed(activity: Activity) {
+                com.noxsip.app.util.Diagnosis.record("App", "Resumed " + activity.javaClass.simpleName)
                 if (activity is MainActivity) {
                     isMainActivityVisible = true
                 }

@@ -291,6 +291,7 @@ fun AccountSetupScreen(
             SettingsRow(Icons.Filled.ManageAccounts, "User Account", backupSubtitle, MaterialTheme.colorScheme.tertiary) { settingsTab = 3 }
             SettingsRow(Icons.Filled.SystemUpdate, "App Update", "Check for a new version", MaterialTheme.colorScheme.secondary) { settingsTab = 6 }
             SettingsRow(Icons.Filled.Palette, "Appearance", "System, light, or dark theme", MaterialTheme.colorScheme.tertiary) { settingsTab = 9 }
+            SettingsRow(Icons.Filled.MonitorHeart, "Diagnosis", "Call summary and network history", MaterialTheme.colorScheme.primary) { settingsTab = 11 }
             // নিচের ঐচ্ছিক ফ্লোটিং উইজেট (SupportSlot) যেন শেষ সারির উপর না পড়ে
             Spacer(modifier = Modifier.height(72.dp))
         } else {
@@ -305,6 +306,7 @@ fun AccountSetupScreen(
                 8 -> "Auto Call"
                 9 -> "Appearance"
                 10 -> "Auto Answer"
+                11 -> "Diagnosis"
                 else -> "User Account"
             }
             Row(
@@ -318,6 +320,7 @@ fun AccountSetupScreen(
                     )
                 }
                 val (pageIcon, pageColor) = when (settingsTab) {
+                    11 -> Icons.Filled.MonitorHeart to MaterialTheme.colorScheme.primary
                     10 -> Icons.Filled.MusicNote to MaterialTheme.colorScheme.tertiary
                     0 -> Icons.Filled.Dns to MaterialTheme.colorScheme.primary
                     1 -> Icons.Filled.GraphicEq to MaterialTheme.colorScheme.tertiary
@@ -988,6 +991,7 @@ fun AccountSetupScreen(
                 modifier = Modifier.padding(8.dp)
             )
         }
+        if (settingsTab == 11) DiagnosisPanel()
         if (settingsTab == 7) {
             ConnectionHealthCard(
                 currentAccount = currentAccount,
