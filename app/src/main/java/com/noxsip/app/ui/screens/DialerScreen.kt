@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.automirrored.filled.Backspace
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Call
@@ -402,28 +403,30 @@ fun DialerScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Text("Dial", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = {
-                        val clip = clipboardManager.getText()?.text?.trim()
-                        val cleaned = clip?.let { normalizeDialInput(it) }
-                        if (!cleaned.isNullOrEmpty()) {
-                            phoneNumber = cleaned
-                            showKeypad = true
-                        }
-                    }) {
-                        Icon(Icons.Filled.ContentPaste, contentDescription = "Paste number", tint = MaterialTheme.colorScheme.onSurface)
+                Text("Dial", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+                Box(Modifier.padding(end = 36.dp)) {
+                    var expanded by remember { mutableStateOf(false) }
+                    IconButton(onClick = { expanded = true }, modifier = Modifier.size(36.dp)) {
+                        Icon(Icons.Filled.MoreVert, contentDescription = "Dial options")
                     }
-                    if (recentCalls.isNotEmpty()) {
-                        IconButton(onClick = { confirmClear = true }) {
-                            Icon(Icons.Filled.DeleteOutline, contentDescription = "Clear call history", tint = MaterialTheme.colorScheme.onSurface)
-                        }
-                    }
-                    IconButton(onClick = {
-                        searchMode = true
-                        showKeypad = false
-                    }) {
-                        Icon(Icons.Filled.Search, contentDescription = "Search contacts", tint = MaterialTheme.colorScheme.onSurface)
+                    DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                        DropdownMenuItem(text = { Text("Paste number") }, onClick = {
+                            expanded = false
+                            val cleaned = clipboardManager.getText()?.text?.trim()?.let { normalizeDialInput(it) }
+                            if (!cleaned.isNullOrEmpty()) {
+                                phoneNumber = cleaned
+                                showKeypad = true
+                            }
+                        })
+                        DropdownMenuItem(text = { Text("Clear call history") }, enabled = recentCalls.isNotEmpty(), onClick = {
+                            expanded = false
+                            confirmClear = true
+                        })
+                        DropdownMenuItem(text = { Text("Search contacts") }, onClick = {
+                            expanded = false
+                            searchMode = true
+                            showKeypad = false
+                        })
                     }
                 }
             }

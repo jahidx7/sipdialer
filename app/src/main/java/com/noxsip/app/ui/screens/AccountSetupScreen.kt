@@ -282,47 +282,7 @@ fun AccountSetupScreen(
                     }
                 )
             }
-            // Auto-answer applies to incoming SIP calls and stays off until enabled by the user.
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(MaterialTheme.colorScheme.surfaceContainerLow)
-                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f), RoundedCornerShape(12.dp))
-                    .clickable {
-                        autoAnswerCalls = !autoAnswerCalls
-                        AutoAnswerPrefs.setEnabled(context, autoAnswerCalls)
-                    }
-                    .padding(horizontal = 8.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(32.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.tertiaryContainer),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(Icons.Filled.CallReceived, contentDescription = null, tint = MaterialTheme.colorScheme.onTertiaryContainer, modifier = Modifier.size(18.dp))
-                }
-                Spacer(modifier = Modifier.width(8.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("Auto Answer", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
-                    Text(
-                        if (autoAnswerCalls) "On: incoming SIP calls are answered automatically" else "Off: answer incoming SIP calls manually",
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Switch(
-                    checked = autoAnswerCalls,
-                    onCheckedChange = {
-                        autoAnswerCalls = it
-                        AutoAnswerPrefs.setEnabled(context, it)
-                    }
-                )
-            }
-            SettingsRow(Icons.Filled.MusicNote, "Auto Answer Audio", "Audio file, schedule and microphone", MaterialTheme.colorScheme.tertiary) { settingsTab = 10 }
+            SettingsRow(Icons.Filled.MusicNote, "Auto Answer", "Audio file, schedule and microphone", MaterialTheme.colorScheme.tertiary) { settingsTab = 10 }
             SettingsRow(Icons.AutoMirrored.Filled.PhoneForwarded, "Auto Call", "Import a list and play a recorded SIP message", MaterialTheme.colorScheme.primary) { settingsTab = 8 }
             SettingsRow(Icons.Filled.PhoneInTalk, "Dialer & Permission", "Phone dialer integration", MaterialTheme.colorScheme.secondary) { settingsTab = 2 }
             SettingsRow(Icons.Filled.BatteryChargingFull, "Power Mode", "Battery mode", MaterialTheme.colorScheme.tertiary) { settingsTab = 4 }
@@ -344,7 +304,7 @@ fun AccountSetupScreen(
                 7 -> "Connection Health"
                 8 -> "Auto Call"
                 9 -> "Appearance"
-                10 -> "Auto Answer Audio"
+                10 -> "Auto Answer"
                 else -> "User Account"
             }
             Row(
@@ -1037,6 +997,47 @@ fun AccountSetupScreen(
             )
         }
         if (settingsTab == 10) {
+            // Auto-answer applies to incoming SIP calls and stays off until enabled by the user.
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f), RoundedCornerShape(12.dp))
+                    .clickable {
+                        autoAnswerCalls = !autoAnswerCalls
+                        AutoAnswerPrefs.setEnabled(context, autoAnswerCalls)
+                    }
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.tertiaryContainer),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Filled.CallReceived, contentDescription = null, tint = MaterialTheme.colorScheme.onTertiaryContainer, modifier = Modifier.size(18.dp))
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Auto Answer", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
+                    Text(
+                        if (autoAnswerCalls) "On: incoming SIP calls are answered automatically" else "Off: answer incoming SIP calls manually",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = autoAnswerCalls,
+                    onCheckedChange = {
+                        autoAnswerCalls = it
+                        AutoAnswerPrefs.setEnabled(context, it)
+                    }
+                )
+            }
+
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(14.dp),
@@ -1122,7 +1123,6 @@ fun AccountSetupScreen(
                     AutoAnswerPrefs.setMicrophoneEnabled(context, it)
                 })
             }
-            if (!autoAnswerCalls) Text("Enable Auto Answer in Settings to use these options.", fontSize = 11.sp)
         }
         if (settingsTab == 8) {
             AutoCallScreen(autoCallController, registrationState, Modifier.weight(1f))

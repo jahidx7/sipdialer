@@ -458,7 +458,6 @@ fun SipDialerApp(
             modifier = Modifier
                 .fillMaxSize()
                 .statusBarsPadding()
-                .padding(top = 20.dp)
                 .padding(paddingValues)
         ) {
             composable(Screen.Dialer.route) {
@@ -656,8 +655,7 @@ fun SipDialerApp(
             modifier = Modifier
                 .align(Alignment.TopEnd)
                 .statusBarsPadding()
-                .padding(top = 0.dp, end = 12.dp)
-                .shadow(6.dp, RoundedCornerShape(20.dp))
+                .padding(top = 0.dp, end = 4.dp)
                 .clip(RoundedCornerShape(20.dp))
                 .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.92f))
                 .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(20.dp))
@@ -668,20 +666,21 @@ fun SipDialerApp(
                         restoreState = true
                     }
                 }
-                .padding(horizontal = 12.dp, vertical = 4.dp),
+                .padding(horizontal = 4.dp, vertical = 0.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+            horizontalArrangement = Arrangement.spacedBy(2.dp)
         ) {
             Box(
                 modifier = Modifier
-                    .size(8.dp)
+                    .size(4.dp)
                     .clip(CircleShape)
                     .background(pillColor)
             )
             Text(
                 text = pillLabel,
                 color = MaterialTheme.colorScheme.onSurface,
-                fontSize = 12.sp,
+                lineHeight = 10.sp,
+                fontSize = 8.sp,
                 fontWeight = FontWeight.SemiBold
             )
         }
