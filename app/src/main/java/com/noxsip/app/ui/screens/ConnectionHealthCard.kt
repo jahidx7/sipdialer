@@ -1,8 +1,12 @@
 package com.noxsip.app.ui.screens
 
+import android.content.ActivityNotFoundException
 import android.content.Context
+import android.content.Intent
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import android.net.Uri
+import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -19,6 +23,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -34,6 +39,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.noxsip.app.BuildConfig
 import com.noxsip.app.data.models.SipAccountData
 import com.noxsip.app.sip.SipRegistrationState
 import com.noxsip.app.util.SipConnectionDiagnostics
@@ -122,6 +128,34 @@ fun ConnectionHealthCard(
                 ) {
                     Icon(Icons.Filled.Refresh, contentDescription = null)
                     Text("  Retry registration")
+                }
+            }
+        }
+
+        if (BuildConfig.FLAVOR == "lite") {
+            OutlinedCard(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
+                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("RanksITT Web Dialer", fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "Sign in using your browser and keep the portal open for incoming calls.",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    OutlinedButton(
+                        onClick = {
+                            val portal = Uri.parse("https://sip.ranksitt.net/vup/login")
+                            try {
+                                context.startActivity(Intent(Intent.ACTION_VIEW, portal).apply {
+                                    addCategory(Intent.CATEGORY_BROWSABLE)
+                                })
+                            } catch (_: ActivityNotFoundException) {
+                                Toast.makeText(context, "No browser available to open RanksITT.", Toast.LENGTH_LONG).show()
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Open Web Dialer")
+                    }
                 }
             }
         }
