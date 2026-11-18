@@ -322,50 +322,7 @@ fun AccountSetupScreen(
                     }
                 )
             }
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f))
-            ) {
-                Column(
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
-                    verticalArrangement = Arrangement.spacedBy(5.dp)
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Filled.MusicNote, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary, modifier = Modifier.size(22.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Auto Answer Audio", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                            Text(
-                                autoAnswerAudioName?.let { "Selected: $it" } ?: "Choose a song or audio file to play to the caller",
-                                fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        OutlinedButton(
-                            onClick = { autoAnswerAudioPicker.launch(arrayOf("audio/*")) },
-                            enabled = !importingAutoAnswerAudio
-                        ) {
-                            Icon(Icons.Filled.FolderOpen, contentDescription = null)
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(if (importingAutoAnswerAudio) "Preparing audio..." else "Choose audio")
-                        }
-                        if (autoAnswerAudioName != null) {
-                            TextButton(
-                                onClick = {
-                                    AutoAnswerPrefs.clearAudio(context)
-                                    autoAnswerAudioName = null
-                                }
-                            ) { Text("Remove") }
-                        }
-                    }
-                }
-            }
+            SettingsRow(Icons.Filled.MusicNote, "Auto Answer Audio", "Audio file, schedule and microphone", MaterialTheme.colorScheme.tertiary) { settingsTab = 10 }
             SettingsRow(Icons.AutoMirrored.Filled.PhoneForwarded, "Auto Call", "Import a list and play a recorded SIP message", MaterialTheme.colorScheme.primary) { settingsTab = 8 }
             SettingsRow(Icons.Filled.PhoneInTalk, "Dialer & Permission", "Phone dialer integration", MaterialTheme.colorScheme.secondary) { settingsTab = 2 }
             SettingsRow(Icons.Filled.BatteryChargingFull, "Power Mode", "Battery mode", MaterialTheme.colorScheme.tertiary) { settingsTab = 4 }
@@ -387,6 +344,7 @@ fun AccountSetupScreen(
                 7 -> "Connection Health"
                 8 -> "Auto Call"
                 9 -> "Appearance"
+                10 -> "Auto Answer Audio"
                 else -> "User Account"
             }
             Row(
@@ -400,6 +358,7 @@ fun AccountSetupScreen(
                     )
                 }
                 val (pageIcon, pageColor) = when (settingsTab) {
+                    10 -> Icons.Filled.MusicNote to MaterialTheme.colorScheme.tertiary
                     0 -> Icons.Filled.Dns to MaterialTheme.colorScheme.primary
                     1 -> Icons.Filled.GraphicEq to MaterialTheme.colorScheme.tertiary
                     2 -> Icons.Filled.PhoneInTalk to MaterialTheme.colorScheme.secondary
@@ -1076,6 +1035,94 @@ fun AccountSetupScreen(
                 registrationError = registrationError,
                 onRetry = { currentAccount?.let(onSaveAndRegister) }
             )
+        }
+        if (settingsTab == 10) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f))
+            ) {
+                Column(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                    verticalArrangement = Arrangement.spacedBy(5.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Filled.MusicNote, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary, modifier = Modifier.size(22.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Auto Answer Audio", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                            Text(
+                                autoAnswerAudioName?.let { "Selected: $it" } ?: "Choose a song or audio file to play to the caller",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedButton(
+                            onClick = { autoAnswerAudioPicker.launch(arrayOf("audio/*")) },
+                            enabled = !importingAutoAnswerAudio
+                        ) {
+                            Icon(Icons.Filled.FolderOpen, contentDescription = null)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(if (importingAutoAnswerAudio) "Preparing audio..." else "Choose audio")
+                        }
+                        if (autoAnswerAudioName != null) {
+                            TextButton(
+                                onClick = {
+                                    AutoAnswerPrefs.clearAudio(context)
+                                    autoAnswerAudioName = null
+                                }
+                            ) { Text("Remove") }
+                        }
+                    }
+                }
+            }
+
+            var schedule by remember { mutableStateOf(AutoAnswerPrefs.schedule(context)) }
+            var micEnabled by remember { mutableStateOf(AutoAnswerPrefs.microphoneEnabled(context)) }
+            HorizontalDivider()
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Daily schedule", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                    Text(if (schedule.enabled) "Uses your phone’s local time" else "Off · Auto Answer can run any time", fontSize = 11.sp)
+                }
+                Switch(checked = schedule.enabled, onCheckedChange = {
+                    schedule = schedule.copy(enabled = it)
+                    AutoAnswerPrefs.setSchedule(context, schedule)
+                })
+            }
+            if (schedule.enabled) {
+                listOf(true, false).forEach { isStart ->
+                    val minutes = if (isStart) schedule.start else schedule.end
+                    val label = if (isStart) "Start" else "End"
+                    val time = String.format(java.util.Locale.getDefault(), "%02d:%02d", minutes / 60, minutes % 60)
+                    OutlinedButton(onClick = {
+                        android.app.TimePickerDialog(context, { _, hour, minute ->
+                            val chosen = hour * 60 + minute
+                            schedule = if (isStart) schedule.copy(start = chosen) else schedule.copy(end = chosen)
+                            AutoAnswerPrefs.setSchedule(context, schedule)
+                        }, minutes / 60, minutes % 60, true).show()
+                    }, modifier = Modifier.fillMaxWidth()) { Text("$label · $time") }
+                }
+                if (schedule.start == schedule.end) Text("Matching times mean all day.", fontSize = 11.sp)
+                if (schedule.end < schedule.start) Text("Ends the following day.", fontSize = 11.sp)
+            }
+            HorizontalDivider()
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Microphone during auto-answer", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                    Text("When off, the caller hears only the selected file. A file is required.", fontSize = 11.sp)
+                }
+                Switch(checked = micEnabled, onCheckedChange = {
+                    micEnabled = it
+                    AutoAnswerPrefs.setMicrophoneEnabled(context, it)
+                })
+            }
+            if (!autoAnswerCalls) Text("Enable Auto Answer in Settings to use these options.", fontSize = 11.sp)
         }
         if (settingsTab == 8) {
             AutoCallScreen(autoCallController, registrationState, Modifier.weight(1f))

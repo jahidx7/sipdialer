@@ -1009,13 +1009,16 @@ class SipEngine(private val context: Context) {
                     _callAccountUser.value = labelForCall(call)
                     _callState.value = SipCallState.Incoming(remoteAddress, call)
                     stopAutoAnswerAudio()
-                    if (AutoAnswerPrefs.isEnabled(context)) {
+                    val micEnabled = AutoAnswerPrefs.microphoneEnabled(context)
+                    if (AutoAnswerPrefs.shouldAnswerNow(context) &&
+                        (micEnabled || AutoAnswerPrefs.audioPath(context) != null)
+                    ) {
                         pendingAutoAnswerAudioRemote = remoteAddress
                         // Use the same answer path as the in-call controls so audio and foreground service setup match.
                         mainHandler.post {
                             val stillIncoming = call.state == Call.State.IncomingReceived ||
                                 call.state == Call.State.IncomingEarlyMedia
-                            if (stillIncoming) answerCall()
+                            if (stillIncoming) answerCall(call, muteMicrophone = !micEnabled)
                         }
                         return
                     }
@@ -1625,7 +1628,9 @@ class SipEngine(private val context: Context) {
     /**
      * Answer incoming SIP call
      */
-    fun answerCall() {
+    fun answerCall() = answerCall(core.currentCall ?: core.calls.firstOrNull())
+
+    private fun answerCall(targetCall: Call?, muteMicrophone: Boolean = false) {
         // মাইক্রোফোন-টাইপ ফোরগ্রাউন্ড সার্ভিস আগে চালু করি, নইলে ব্যাকগ্রাউন্ডে অপরপ্রান্ত আমাদের কথা শোনে না
         SipForegroundService.setCallActive(context, true)
         mainHandler.removeCallbacks(ringingWatchdog)
@@ -1637,8 +1642,8 @@ class SipEngine(private val context: Context) {
         NotificationHelper.cancelIncomingCallNotification(context)
         NativeDialerOverlay.dismiss()
         try {
-            val targetCall = core.currentCall ?: core.calls.firstOrNull()
             targetCall?.let { call ->
+                if (muteMicrophone) call.setMicrophoneMuted(true)
                 val remoteAddr = call.remoteAddress.asStringUriOnly()
                 val params = core.createCallParams(call)
                 params?.isAudioEnabled = true

@@ -26,6 +26,48 @@ object AutoAnswerPrefs {
             .apply()
     }
 
+
+    data class Schedule(val enabled: Boolean, val start: Int, val end: Int) {
+        fun includes(minute: Int): Boolean = when {
+            !enabled -> true
+            start < end -> minute in start until end
+            start > end -> minute >= start || minute < end
+            else -> true
+        }
+    }
+
+    fun schedule(context: Context): Schedule {
+        val prefs = preferences(context)
+        return Schedule(
+            prefs.getBoolean("schedule_enabled", false),
+            prefs.getInt("schedule_start", 9 * 60),
+            prefs.getInt("schedule_end", 18 * 60)
+        )
+    }
+
+    fun setSchedule(context: Context, value: Schedule) {
+        preferences(context).edit()
+            .putBoolean("schedule_enabled", value.enabled)
+            .putInt("schedule_start", value.start)
+            .putInt("schedule_end", value.end)
+            .apply()
+    }
+
+    fun shouldAnswerNow(context: Context): Boolean {
+        if (!isEnabled(context)) return false
+        val now = java.util.Calendar.getInstance()
+        return schedule(context).includes(
+            now.get(java.util.Calendar.HOUR_OF_DAY) * 60 + now.get(java.util.Calendar.MINUTE)
+        )
+    }
+
+    fun microphoneEnabled(context: Context): Boolean =
+        preferences(context).getBoolean("auto_answer_microphone_enabled", true)
+
+    fun setMicrophoneEnabled(context: Context, enabled: Boolean) {
+        preferences(context).edit().putBoolean("auto_answer_microphone_enabled", enabled).apply()
+    }
+
     fun audioPath(context: Context): String? {
         val path = preferences(context).getString(KEY_AUDIO_PATH, null) ?: return null
         return path.takeIf { File(it).isFile }
