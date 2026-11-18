@@ -141,7 +141,9 @@ fun ConnectionHealthCard(
                     )
                     OutlinedButton(
                         onClick = {
-                            context.startActivity(Intent(context, RanksIttDialerActivity::class.java))
+                            context.startActivity(Intent(context, RanksIttDialerActivity::class.java).apply {
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            })
                         },
                         modifier = Modifier.fillMaxWidth()
                     ) {

@@ -26,6 +26,7 @@ class RanksIttDialerActivity : Activity() {
         dialer = WebView(this).apply {
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
+            settings.textZoom = (settings.textZoom * 0.9f).toInt().coerceAtLeast(1)
             settings.allowFileAccess = false
             settings.allowContentAccess = false
             CookieManager.getInstance().setAcceptCookie(true)
@@ -64,7 +65,7 @@ class RanksIttDialerActivity : Activity() {
 
         val close = Button(this).apply {
             text = "Back to NoxSIP"
-            setOnClickListener { finish() }
+            setOnClickListener { returnToNoxSip() }
         }
         setContentView(LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -89,6 +90,17 @@ class RanksIttDialerActivity : Activity() {
         } else {
             request.deny()
         }
+    }
+
+    // Keep the portal's live page and session when returning to the main task.
+    @Deprecated("Handled here because Back parks the web dialer task.")
+    override fun onBackPressed() {
+        returnToNoxSip()
+    }
+
+    private fun returnToNoxSip() {
+        CookieManager.getInstance().flush()
+        moveTaskToBack(true)
     }
 
     override fun onSaveInstanceState(outState: Bundle) {

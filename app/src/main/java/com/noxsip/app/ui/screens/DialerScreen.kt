@@ -402,7 +402,7 @@ fun DialerScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Text("Dial", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                Text("Dial", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = {
                         val clip = clipboardManager.getText()?.text?.trim()
@@ -598,12 +598,12 @@ fun DialerScreen(
                                         interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
                                         indication = null
                                     ) { filterTab = tabIndex }
-                                    .padding(vertical = 7.dp),
+                                    .padding(vertical = 6.dp),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
                                     label,
-                                    fontSize = 13.sp,
+                                    fontSize = 11.sp,
                                     maxLines = 1,
                                     fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
                                     color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
@@ -620,7 +620,7 @@ fun DialerScreen(
                             val sel = sourceTab == i
                             Text(
                                 text = label,
-                                fontSize = 12.sp,
+                                fontSize = 11.sp,
                                 fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Medium,
                                 color = if (sel) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier
@@ -1021,10 +1021,10 @@ private fun CallGroupRow(
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.surface)
             .clickable(onClick = onClick)
-            .padding(start = 4.dp, end = 4.dp, top = 14.dp, bottom = 14.dp),
+            .padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(modifier = Modifier.width(40.dp), contentAlignment = Alignment.Center) {
+        Box(modifier = Modifier.width(28.dp), contentAlignment = Alignment.Center) {
             Icon(
                 imageVector = when {
                     isMissed -> Icons.Filled.CallMissed
@@ -1040,7 +1040,7 @@ private fun CallGroupRow(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = title,
-                    fontSize = 17.sp,
+                    fontSize = 14.sp,
                     fontWeight = FontWeight.Normal,
                     color = if (isMissed) com.noxsip.app.ui.theme.Red500 else MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
@@ -1050,7 +1050,7 @@ private fun CallGroupRow(
                 if (group.records.size > 1) {
                     Text(
                         text = " (${group.records.size})",
-                        fontSize = 15.sp,
+                        fontSize = 11.sp,
                         fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1
@@ -1058,10 +1058,10 @@ private fun CallGroupRow(
                 }
             }
             if (subtitle.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(3.dp))
+                Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = subtitle,
-                    fontSize = 13.sp,
+                    fontSize = 11.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
@@ -1073,16 +1073,16 @@ private fun CallGroupRow(
                 if (isFavorite) Icons.Filled.Star else Icons.Filled.StarOutline,
                 contentDescription = if (isFavorite) "Remove speed dial favorite" else "Add to speed dial",
                 tint = if (isFavorite) Color(0xFFF59E0B) else MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(19.dp)
+                modifier = Modifier.size(16.dp)
             )
         }
         Text(
             text = shortTime(latest.timestamp),
-            fontSize = 13.sp,
+            fontSize = 11.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1
         )
-        Spacer(modifier = Modifier.width(10.dp))
+        Spacer(modifier = Modifier.width(4.dp))
         Box(
             modifier = Modifier
                 .size(34.dp)
@@ -1095,7 +1095,7 @@ private fun CallGroupRow(
                 Icons.AutoMirrored.Filled.KeyboardArrowRight,
                 contentDescription = "Details",
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(20.dp)
+                modifier = Modifier.size(17.dp)
             )
         }
     }

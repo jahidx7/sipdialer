@@ -157,7 +157,14 @@
             android:name=".service.KeepAliveReceiver"
             android:exported="false" />
 
-        <activity android:name=".RanksIttDialerActivity" android:exported="false" />
+        <activity
+            android:name=".RanksIttDialerActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:taskAffinity="${applicationId}.webdialer"
+            android:enableOnBackInvokedCallback="false"
+            android:launchMode="singleTask"
+            android:windowSoftInputMode="adjustResize" />
     </application>
 
 </manifest>
