@@ -1,9 +1,6 @@
 name: Build NoxSIP Lite APK
 
 on:
-  push:
-    branches:
-      - codex/auto-answer-stable-signing
   workflow_dispatch:
 
 permissions:
@@ -140,4 +137,4 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --title "NoxSIP Lite ${APP_VERSION}" \
-            --notes "Lite 1.3.0 matches Beta cellular STUN/ICE and keep-alive settings and adds Settings → Diagnosis with local event history, call summary, copy and clear."
+            --notes "Lite 1.3.1 simplifies per-contact call logs, labels SIP calls by account and imported cellular calls by SIM slot when Android provides it. Mobile registration still requires a SIP endpoint and transport reachable on the carrier network; Diagnosis records unanswered registration attempts for provider-side tracing."
