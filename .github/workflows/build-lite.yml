@@ -1,6 +1,9 @@
 name: Build NoxSIP Lite APK
 
 on:
+  push:
+    branches:
+      - codex/auto-answer-stable-signing
   workflow_dispatch:
 
 permissions:
