@@ -1,6 +1,9 @@
 name: Build NoxSIP Lite APK
 
 on:
+  push:
+    branches:
+      - codex/auto-answer-stable-signing
   workflow_dispatch:
 
 permissions:
@@ -39,7 +42,7 @@ jobs:
         with:
           packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
 
-      - name: Restore or create the persistent signing key
+      - name: Restore the existing protected signing key
         env:
           GH_TOKEN: ${{ github.token }}
           ANDROID_SIGNING_PASSWORD: ${{ secrets.ANDROID_SIGNING_PASSWORD }}
@@ -50,34 +53,18 @@ jobs:
           keystore="$RUNNER_TEMP/noxsip-release.p12"
           encrypted="$RUNNER_TEMP/noxsip-signing-key.p12.enc"
 
-          if gh release view "$key_tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release download "$key_tag" \
-              --repo "$GITHUB_REPOSITORY" \
-              --pattern "noxsip-signing-key.p12.enc" \
-              --dir "$RUNNER_TEMP"
-            test -s "$encrypted"
-            openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -md sha256 \
-              -in "$encrypted" -out "$keystore" \
-              -pass env:ANDROID_SIGNING_PASSWORD
-          else
-            keytool -genkeypair -v \
-              -keystore "$keystore" \
-              -storetype PKCS12 \
-              -storepass "$ANDROID_SIGNING_PASSWORD" \
-              -keypass "$ANDROID_SIGNING_PASSWORD" \
-              -alias noxsip \
-              -keyalg RSA -keysize 2048 -validity 10000 \
-              -dname "CN=NoxSIP Lite, OU=Android, O=NoxSIP, L=Dhaka, ST=Dhaka, C=BD"
-            openssl enc -aes-256-cbc -salt -pbkdf2 -iter 600000 -md sha256 \
-              -in "$keystore" -out "$encrypted" \
-              -pass env:ANDROID_SIGNING_PASSWORD
-            gh release create "$key_tag" "$encrypted" \
-              --repo "$GITHUB_REPOSITORY" \
-              --target "$GITHUB_SHA" \
-              --title "NoxSIP Lite encrypted signing key" \
-              --notes "Encrypted signing-key backup. The password is stored in repository Actions secrets." \
-              --latest=false
+          if ! gh release view "$key_tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error title=Signing key unavailable::The existing protected signing-key backup is missing. This workflow will not create or upload a signing key."
+            exit 1
           fi
+          gh release download "$key_tag" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern "noxsip-signing-key.p12.enc" \
+            --dir "$RUNNER_TEMP"
+          test -s "$encrypted"
+          openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -md sha256 \
+            -in "$encrypted" -out "$keystore" \
+            -pass env:ANDROID_SIGNING_PASSWORD
 
           keytool -list -keystore "$keystore" -storetype PKCS12 \
             -storepass "$ANDROID_SIGNING_PASSWORD" -alias noxsip >/dev/null
