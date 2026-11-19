@@ -533,8 +533,10 @@ fun DialerScreen(
                     recentCalls
                         .filter {
                             when (sourceTab) {
-                                1 -> it.accountUser != "SIM"
-                                2 -> it.accountUser == "SIM"
+                                1 -> !it.accountUser.equals("SIM", ignoreCase = true) &&
+                                    !it.accountUser.startsWith("SIM ", ignoreCase = true)
+                                2 -> it.accountUser.equals("SIM", ignoreCase = true) ||
+                                    it.accountUser.startsWith("SIM ", ignoreCase = true)
                                 else -> true
                             }
                         }
