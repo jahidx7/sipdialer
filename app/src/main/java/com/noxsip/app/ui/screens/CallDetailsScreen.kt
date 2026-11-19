@@ -79,6 +79,13 @@ private fun statusText(r: CallRecord): String = when {
     else -> "Outgoing ${durationText(r.duration)}"
 }
 
+private fun callSourceText(source: String): String = when {
+    source.equals("SIM", ignoreCase = true) -> "SIM"
+    source.startsWith("SIM ", ignoreCase = true) -> source
+    source.isBlank() -> ""
+    else -> "SIP • $source"
+}
+
 private fun clock(ms: Int): String {
     val total = (ms / 1000).coerceAtLeast(0)
     return "%02d:%02d".format(total / 60, total % 60)
@@ -252,7 +259,7 @@ fun CallDetailsScreen(
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(detailDate(r.timestamp), fontSize = 16.sp, color = if (missed) Red500 else MaterialTheme.colorScheme.onSurface)
                                         if (r.accountUser.isNotBlank()) {
-                                            Text(r.accountUser, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            Text(callSourceText(r.accountUser), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                         }
                                     }
                                     Text(
@@ -278,15 +285,6 @@ fun CallDetailsScreen(
                                             )
                                         }
                                     }
-                                }
-                                if (r.codec.isNotBlank()) {
-                                    val score = if (r.qualityRating >= 0f) " • ${"%.1f".format(r.qualityRating)}/5" else ""
-                                    Text(
-                                        "Call quality$score • ${r.codec} • RTT ${r.rttMs} ms • Jitter ${r.jitterMs} ms • Loss ${"%.1f".format(r.lossPercent)}%",
-                                        fontSize = 11.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.padding(top = 6.dp)
-                                    )
                                 }
                                 if (hasRec && playingId == r.id) {
                                     PlaybackBar(
