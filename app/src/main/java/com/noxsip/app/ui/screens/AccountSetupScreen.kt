@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 22408)
-Total output lines: 1776
-
 package com.noxsip.app.ui.screens
 
 import android.content.Intent
@@ -744,7 +741,199 @@ fun AccountSetupScreen(
                                 .clickable(enabled = item.ok != true) { item.fix() }
                                 .padding(vertical = 2.dp),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement…2408 tokens truncated…  else -> "Offline - tap to connect"
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = when (item.ok) {
+                                    true -> "✓"
+                                    false -> "✗"
+                                    null -> "?"
+                                },
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = when (item.ok) {
+                                    true -> Green500
+                                    false -> Red500
+                                    null -> Amber500
+                                }
+                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = item.title,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = item.hint,
+                                    fontSize = 10.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            if (item.ok != true) {
+                                Text(
+                                    text = if (item.ok == false) "Fix" else "Open",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                    }
+                }
+
+                } // end of Dialer tab: setup checklist
+
+                if (settingsTab == 1) {
+                // Mic Boost slider: অপরপ্রান্ত আপনার কথা আস্তে শুনলে বাড়ান, বিকৃত শুনলে কমান
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
+                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = "Mic Boost",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "+$micBoost dB",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Green500
+                        )
+                    }
+                    Slider(
+                        value = micBoost.toFloat(),
+                        onValueChange = { v ->
+                            micBoost = v.toInt()
+                            com.noxsip.app.util.AudioQualityPrefs.setMicBoostDb(context, micBoost)
+                            // চলমান কলেও সাথে সাথে কার্যকর
+                            try {
+                                com.noxsip.app.SipDialerApplication.core.micGainDb = micBoost.toFloat()
+                            } catch (_: Exception) {
+                            }
+                        },
+                        valueRange = 0f..com.noxsip.app.util.AudioQualityPrefs.MAX_MIC_BOOST_DB.toFloat(),
+                        steps = com.noxsip.app.util.AudioQualityPrefs.MAX_MIC_BOOST_DB - 1
+                    )
+                    Text(
+                        text = "Increase if the other side hears you too quietly",
+                        fontSize = 10.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                } // end of Audio tab: mic boost
+            }
+        }
+
+        // Power Mode page
+        if (settingsTab == 4) {
+            PowerModeCard()
+        }
+
+        // Blocked numbers page
+        if (settingsTab == 5) {
+            BlockedNumbersCard()
+        }
+
+        // CARD 1b (Account tab): সেভ করা SIP অ্যাকাউন্টের তালিকা
+        if (settingsTab == 0) Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.surface,
+            shadowElevation = 2.dp,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.25f))
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "My SIP Accounts",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.weight(1f)
+                    )
+                    TextButton(onClick = { formTarget = null; showForm = true }) {
+                        Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Add", fontSize = 13.sp, maxLines = 1)
+                    }
+                }
+
+                if (accounts.isEmpty()) {
+                    Text(
+                        text = "No account saved yet. Fill in the form below.",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                accounts.forEach { acc ->
+                    val isSelected = acc.id == currentAccount?.id
+                    val accState = accountStates[acc.id] ?: SipRegistrationState.UNREGISTERED
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(
+                                if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
+                                else MaterialTheme.colorScheme.surfaceVariant
+                            )
+                            .clickable {
+                                if (!isSelected || (accState != SipRegistrationState.REGISTERED && accState != SipRegistrationState.REGISTERING)) {
+                                    onSelectAccount(acc.id)
+                                }
+                            }
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = if (isSelected) Icons.Filled.CheckCircle else Icons.Filled.RadioButtonUnchecked,
+                            contentDescription = if (isSelected) "Selected" else "Select",
+                            tint = if (isSelected) Green500 else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = acc.name.ifBlank { acc.username },
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = "${acc.username}@${acc.domain}",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = if (!acc.enabled) "Turned off" else when (accState) {
+                                    SipRegistrationState.REGISTERED ->
+                                        if (isSelected) "Connected • used for outgoing calls" else "Connected • receiving calls"
+                                    SipRegistrationState.REGISTERING -> "Connecting..."
+                                    SipRegistrationState.ERROR -> "Connection failed - tap to retry"
+                                    else -> "Offline - tap to connect"
                                 },
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.SemiBold,
