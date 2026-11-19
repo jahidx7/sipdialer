@@ -3,6 +3,7 @@ package com.noxsip.app.util
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.telephony.SubscriptionManager
 import android.provider.CallLog
 import androidx.core.content.ContextCompat
 import com.noxsip.app.data.AppDatabase
@@ -12,7 +13,7 @@ import kotlinx.coroutines.withContext
 
 /**
  * ফোনের (SIM) কল লগ পড়ে অ্যাপের কল তালিকায় আনে, যাতে SIP + সাধারণ কল একসাথে দেখা ও ব্যাকআপ করা যায়।
- * ইম্পোর্ট করা কলের accountUser = "SIM" (SIP কলে অ্যাকাউন্টের নম্বর থাকে)।
+ * ইম্পোর্ট করা কলের accountUser-এ SIM slot লেখা হয়; SIP কলে অ্যাকাউন্টের ইউজারনেম থাকে।
  */
 object CallLogSync {
     const val SIM_LABEL = "SIM"
@@ -27,9 +28,22 @@ object CallLogSync {
 
     private fun key(ts: Long, number: String) = "$ts|$number"
 
+    private fun simLabels(context: Context): Map<String, String> = try {
+        val manager = context.getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE) as? SubscriptionManager
+        manager?.activeSubscriptionInfoList.orEmpty().associate { info ->
+            info.subscriptionId.toString() to "SIM ${info.simSlotIndex + 1}"
+        }
+    } catch (_: SecurityException) {
+        emptyMap()
+    } catch (_: Exception) {
+        emptyMap()
+    }
+
     /** একটি SIM কল মুছলে ডাকুন */
     fun markDeleted(context: Context, record: CallRecord) {
-        if (record.accountUser != SIM_LABEL) return
+        if (!record.accountUser.equals(SIM_LABEL, ignoreCase = true) &&
+            !record.accountUser.startsWith("SIM ", ignoreCase = true)
+        ) return
         val p = prefs(context)
         val set = (p.getStringSet(KEY_DELETED, emptySet()) ?: emptySet()).toMutableSet()
         set.add(key(record.timestamp, record.remoteAddress))
@@ -55,6 +69,7 @@ object CallLogSync {
         var added = 0
         val deleted = prefs(context).getStringSet(KEY_DELETED, emptySet()) ?: emptySet()
         val clearedBefore = prefs(context).getLong(KEY_CLEARED_BEFORE, 0L)
+        val labelsBySubscription = simLabels(context)
         try {
             context.contentResolver.query(
                 CallLog.Calls.CONTENT_URI,
@@ -63,7 +78,8 @@ object CallLogSync {
                     CallLog.Calls.CACHED_NAME,
                     CallLog.Calls.TYPE,
                     CallLog.Calls.DATE,
-                    CallLog.Calls.DURATION
+                    CallLog.Calls.DURATION,
+                    CallLog.Calls.PHONE_ACCOUNT_ID
                 ),
                 null,
                 null,
@@ -77,6 +93,7 @@ object CallLogSync {
                     val type = c.getInt(2)
                     val ts = c.getLong(3)
                     val dur = c.getInt(4)
+                    val phoneAccountId = c.getString(5).orEmpty()
                     if (ts <= clearedBefore || key(ts, number) in deleted) continue
                     if (dao.countSame(ts, number) > 0) continue
 
@@ -96,7 +113,7 @@ object CallLogSync {
                             isAnswered = answered,
                             duration = if (answered) dur else 0,
                             timestamp = ts,
-                            accountUser = SIM_LABEL
+                            accountUser = labelsBySubscription[phoneAccountId] ?: SIM_LABEL
                         )
                     )
                     added++
