@@ -646,7 +646,7 @@ fun SipDialerApp(
             SipRegistrationState.UNREGISTERED -> MaterialTheme.colorScheme.outline
         }
         val pillLabel = when (registrationState) {
-            SipRegistrationState.REGISTERED -> "Online"
+            SipRegistrationState.REGISTERED -> "SIP ready"
             SipRegistrationState.REGISTERING -> if (registrationError != null) "Retrying" else "Connecting"
             SipRegistrationState.ERROR -> "Error"
             SipRegistrationState.UNREGISTERED -> "Offline"
