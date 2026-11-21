@@ -17,13 +17,13 @@ object UiTextScale {
     const val LARGE = 1.15f
     const val EXTRA_LARGE = 1.3f
 
-    var scale by mutableFloatStateOf(LARGE)
+    var scale by mutableFloatStateOf(NORMAL)
         private set
 
     /** Application.onCreate-এ একবার ডাকুন */
     fun load(context: Context) {
         scale = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .getFloat(KEY_TEXT_SCALE, LARGE)
+            .getFloat(KEY_TEXT_SCALE, NORMAL).coerceAtMost(NORMAL)
     }
 
     fun set(context: Context, value: Float) {

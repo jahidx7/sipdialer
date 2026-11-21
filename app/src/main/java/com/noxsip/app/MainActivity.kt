@@ -283,6 +283,7 @@ fun SipDialerApp(
 
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
+    var settingsHomeRequest by remember { mutableIntStateOf(0) }
     // কল-বার পপ-আপের জন্য: কল স্ক্রিন খোলা কি না। নেভিগেশন শুরু হওয়ার মুহূর্তেই জানাই (রিকম্পোজের অপেক্ষা না করে)
     DisposableEffect(navController) {
         val listener = androidx.navigation.NavController.OnDestinationChangedListener { _, destination, _ ->
@@ -343,7 +344,7 @@ fun SipDialerApp(
     com.noxsip.app.ui.screens.UpdatePrompt()
     var missedSeenTs by remember { mutableLongStateOf(uiPrefs.getLong("missed_seen_ts", 0L)) }
     LaunchedEffect(currentRoute, callRecords) {
-        if (currentRoute == Screen.Dialer.route || currentRoute == Screen.CallHistory.route) {
+        if (currentRoute == Screen.Dialer.route) {
             val now = System.currentTimeMillis()
             missedSeenTs = now
             uiPrefs.edit().putLong("missed_seen_ts", now).apply()
@@ -353,7 +354,6 @@ fun SipDialerApp(
 
     val bottomNavItems = listOf(
         Triple(Screen.Dialer.route, "Keypad", Icons.Filled.Dialpad),
-        Triple(Screen.CallHistory.route, "Recent", Icons.Filled.History),
         Triple(Screen.Contacts.route, "Contacts", Icons.Filled.Contacts),
         Triple(Screen.Account.route, "Settings", Icons.Filled.Settings),
     )
@@ -404,12 +404,15 @@ fun SipDialerApp(
                     bottomNavItems.forEach { (route, label, icon) ->
                         val selected = currentRoute == route
                         val badgeCount = when (route) {
-                            Screen.CallHistory.route -> if (selected) 0 else newMissed
+                            Screen.Dialer.route -> if (selected) 0 else newMissed
                             else -> 0
                         }
                         NavigationBarItem(
                             selected = selected,
                             onClick = {
+                                if (route == Screen.Account.route && currentRoute == Screen.Account.route) {
+                                    settingsHomeRequest++
+                                }
                                 navController.navigate(route) {
                                     popUpTo(navController.graph.startDestinationId) {
                                         saveState = true
@@ -619,6 +622,7 @@ fun SipDialerApp(
                     },
                     registrationState = registrationState,
                     registrationError = registrationError,
+                    resetToHomeRequest = settingsHomeRequest,
                     autoCallController = autoCallController,
                     accountStates = accountStates,
                     onSaveAndRegister = { account ->
@@ -678,31 +682,32 @@ fun SipDialerApp(
                 .align(Alignment.TopEnd)
                 .statusBarsPadding()
                 .padding(top = 0.dp, end = 4.dp)
-                .clip(RoundedCornerShape(20.dp))
+                .clip(RoundedCornerShape(15.dp))
                 .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.92f))
-                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(20.dp))
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(15.dp))
                 .clickable {
+                    if (currentRoute == Screen.Account.route) settingsHomeRequest++
                     navController.navigate(Screen.Account.route) {
                         popUpTo(navController.graph.startDestinationId) { saveState = true }
                         launchSingleTop = true
                         restoreState = true
                     }
                 }
-                .padding(horizontal = 9.dp, vertical = 5.dp),
+                .padding(horizontal = 7.dp, vertical = 3.dp),
             verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             Box(
                 modifier = Modifier
-                    .size(7.dp)
+                    .size(5.dp)
                     .clip(CircleShape)
                     .background(pillColor)
             )
             Text(
                 text = pillLabel,
                 color = MaterialTheme.colorScheme.onSurface,
-                lineHeight = 14.sp,
-                fontSize = 11.sp,
+                lineHeight = 11.sp,
+                fontSize = 9.sp,
                 fontWeight = FontWeight.SemiBold
             )
         }

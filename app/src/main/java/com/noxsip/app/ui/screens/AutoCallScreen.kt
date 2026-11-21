@@ -84,7 +84,10 @@ fun AutoCallScreen(
     val coroutineScope = rememberCoroutineScope()
     val manualNumbers = remember(numbersText) { AutoCallPrefs.parseNumbers(numbersText) }
     val voicePath = AutoCallPrefs.voicePath(context)
+    val voiceDurationMs = remember(voicePath) { voicePath?.let(AutoCallPrefs::voiceDurationMs) }
+    val voiceReady = voiceDurationMs != null
     val newQueueNumbers = importedNumbers ?: manualNumbers
+    val canPrepareQueue = !importing && !progress.running && newQueueNumbers.isNotEmpty() && voiceReady && consent
 
     val numberPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
@@ -243,7 +246,7 @@ fun AutoCallScreen(
                     if (progress.readyCount > 0) {
                         Button(
                             onClick = { queuedRetryStart = true; showStartConfirmation = true },
-                            enabled = !importing && voicePath != null && consent && registrationState == SipRegistrationState.REGISTERED,
+                            enabled = !importing && voicePath != null && voiceReady && consent,
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             androidx.compose.material3.Icon(Icons.Filled.Refresh, contentDescription = null)
@@ -257,12 +260,20 @@ fun AutoCallScreen(
                             queuedRetryStart = false
                             showStartConfirmation = true
                         },
-                        enabled = !importing && newQueueNumbers.isNotEmpty() && voicePath != null && consent && registrationState == SipRegistrationState.REGISTERED,
+                        enabled = canPrepareQueue,
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         androidx.compose.material3.Icon(Icons.Filled.PlayArrow, contentDescription = null)
                         Text("  Start ${newQueueNumbers.size} calls")
                     }
+                }
+                when {
+                    importing -> Text("Preparing the selected file…", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    newQueueNumbers.isEmpty() -> Text("Add at least one valid Bangladesh mobile number to continue.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    voicePath == null -> Text("Choose an audio recording before starting.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    !voiceReady -> Text("The saved recording could not be read. Choose the audio file again.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+                    !consent -> Text("Confirm recipient consent to enable recorded calls.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    registrationState != SipRegistrationState.REGISTERED -> Text("The SIP account is not currently registered. Start will report the live SIP state before dialing.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
                 }
                 if (progress.items.isNotEmpty()) {
                     OutlinedButton(

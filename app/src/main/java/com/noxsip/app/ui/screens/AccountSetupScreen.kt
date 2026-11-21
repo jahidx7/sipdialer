@@ -73,6 +73,7 @@ fun AccountSetupScreen(
     accountStates: Map<String, SipRegistrationState> = emptyMap(),
     onSaveAndRegister: (SipAccountData) -> Unit,
     onUnregister: (String) -> Unit,
+    resetToHomeRequest: Int = 0,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -214,6 +215,7 @@ fun AccountSetupScreen(
     var showAdvanced by remember { mutableStateOf(false) }
     // -1 = settings home list, 0 = SIP Account, 1 = Audio & Codec, 2 = Dialer & Permission, 3 = User Account, 4 = Power Mode, 7 = Connection Health
     var settingsTab by rememberSaveable { mutableIntStateOf(-1) }
+    LaunchedEffect(resetToHomeRequest) { settingsTab = -1 }
 
     val transportOptions = listOf("UDP", "TCP", "TLS")
     val isRegistered = registrationState == SipRegistrationState.REGISTERED
@@ -224,7 +226,7 @@ fun AccountSetupScreen(
     val isThisActive = formTarget != null && formTarget?.id == currentAccount?.id
     // ফর্মে খোলা অ্যাকাউন্টের নিজস্ব সংযোগ-অবস্থা
     val formState = formTarget?.let { accountStates[it.id] } ?: SipRegistrationState.UNREGISTERED
-    val pageInset = (androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp / 30).coerceIn(10, 22).dp
+    val pageInset = (androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp / 32).coerceIn(9, 18).dp
     val trimmedName = accountName.trim()
     val nameTaken = accounts.any { it.id != formTarget?.id && it.name.equals(trimmedName, ignoreCase = true) }
 
@@ -234,20 +236,20 @@ fun AccountSetupScreen(
             .fillMaxSize()
             .then(if (settingsTab == 8 || settingsTab == 11) Modifier else Modifier.verticalScroll(rememberScrollState()))
             .padding(horizontal = pageInset, vertical = 6.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp)
+        verticalArrangement = Arrangement.spacedBy(5.dp)
     ) {
         // Settings home: list of sections (tap a row to open it); back arrow / back button returns here
         androidx.activity.compose.BackHandler(enabled = settingsTab != -1) { settingsTab = -1 }
         if (settingsTab == -1) {
             val backupSubtitle = "Back up accounts, calls & contacts to a file"
-            Card(shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
-                Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    Box(Modifier.size(48.dp).clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.primary.copy(alpha = .14f)), contentAlignment = Alignment.Center) {
-                        Icon(Icons.Filled.Settings, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(25.dp))
+            Card(shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(11.dp)) {
+                    Box(Modifier.size(40.dp).clip(RoundedCornerShape(13.dp)).background(MaterialTheme.colorScheme.primary.copy(alpha = .14f)), contentAlignment = Alignment.Center) {
+                        Icon(Icons.Filled.Settings, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp))
                     }
                     Column(Modifier.weight(1f)) {
-                        Text("Settings", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                        Text("Manage calling, connectivity and app preferences", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("Settings", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text("Manage calling, connectivity and app preferences", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
@@ -261,31 +263,31 @@ fun AccountSetupScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(18.dp))
+                    .clip(RoundedCornerShape(15.dp))
                     .background(MaterialTheme.colorScheme.surfaceContainerLow)
-                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f), RoundedCornerShape(18.dp))
+                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f), RoundedCornerShape(15.dp))
                     .clickable {
                         autoRecordCalls = !autoRecordCalls
                         TelecomHelper.setAutoRecordEnabled(context, autoRecordCalls)
                     }
-                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                    .padding(horizontal = 11.dp, vertical = 9.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 androidx.compose.foundation.layout.Box(
                     modifier = Modifier
-                        .size(40.dp)
-                        .clip(RoundedCornerShape(14.dp))
+                        .size(34.dp)
+                        .clip(RoundedCornerShape(12.dp))
                         .background(Color(0xFFDC2626).copy(alpha = 0.14f)),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(Icons.Filled.FiberManualRecord, contentDescription = null, tint = Color(0xFFDC2626), modifier = Modifier.size(18.dp))
                 }
-                Spacer(modifier = Modifier.width(12.dp))
+                Spacer(modifier = Modifier.width(10.dp))
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("Auto Call Recording", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+                    Text("Auto Call Recording", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
                     Text(
                         if (autoRecordCalls) "On: every call is recorded" else "Off: calls are not recorded",
-                        fontSize = 12.sp,
+                        fontSize = 11.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
@@ -1603,18 +1605,18 @@ private fun SettingsRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(18.dp))
+            .clip(RoundedCornerShape(15.dp))
             .background(MaterialTheme.colorScheme.surfaceContainerLow)
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f), RoundedCornerShape(18.dp))
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f), RoundedCornerShape(15.dp))
             .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 12.dp),
+            .padding(horizontal = 11.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         // রঙিন গোল ব্যাকগ্রাউন্ডে আইকন
         androidx.compose.foundation.layout.Box(
             modifier = Modifier
-                .size(40.dp)
-                .clip(RoundedCornerShape(14.dp))
+                .size(34.dp)
+                .clip(RoundedCornerShape(12.dp))
                 .background(accent.copy(alpha = 0.14f)),
             contentAlignment = Alignment.Center
         ) {
@@ -1625,11 +1627,11 @@ private fun SettingsRow(
                 modifier = Modifier.size(18.dp)
             )
         }
-        Spacer(modifier = Modifier.width(12.dp))
+        Spacer(modifier = Modifier.width(10.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = title,
-                fontSize = 15.sp,
+                fontSize = 14.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1, overflow = TextOverflow.Ellipsis
@@ -1637,7 +1639,7 @@ private fun SettingsRow(
             Spacer(modifier = Modifier.height(1.dp))
             Text(
                 text = subtitle,
-                fontSize = 12.sp,
+                fontSize = 11.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 16.sp
             )
@@ -1652,7 +1654,7 @@ private fun SettingsRow(
 
 @Composable
 private fun SettingsSectionLabel(text: String) {
-    Text(text, modifier = Modifier.padding(start = 4.dp, top = 8.dp, bottom = 2.dp), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+    Text(text, modifier = Modifier.padding(start = 4.dp, top = 6.dp, bottom = 1.dp), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
 }
 
 /**
