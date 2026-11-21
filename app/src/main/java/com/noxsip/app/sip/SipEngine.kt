@@ -107,7 +107,7 @@ class SipEngine(private val context: Context) {
     /** Rebuild Linphone signaling channels on the new Android default-network route. */
     fun onNetworkChanged(isCellular: Boolean? = null) {
         mainHandler.post {
-            Diagnosis.record("Network", "Default route changed")
+            Diagnosis.recordNetworkChange()
             if (isCellular != null && cellularNetwork != isCellular) {
                 cellularNetwork = isCellular
                 cellularUdpFallback.clear()

@@ -681,6 +681,7 @@ fun SipDialerApp(
             modifier = Modifier
                 .align(Alignment.TopEnd)
                 .statusBarsPadding()
+                .offset(y = (-4).dp)
                 .padding(top = 0.dp, end = 4.dp)
                 .clip(RoundedCornerShape(15.dp))
                 .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.92f))

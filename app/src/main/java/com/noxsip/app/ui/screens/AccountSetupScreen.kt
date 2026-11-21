@@ -215,7 +215,17 @@ fun AccountSetupScreen(
     var showAdvanced by remember { mutableStateOf(false) }
     // -1 = settings home list, 0 = SIP Account, 1 = Audio & Codec, 2 = Dialer & Permission, 3 = User Account, 4 = Power Mode, 7 = Connection Health
     var settingsTab by rememberSaveable { mutableIntStateOf(-1) }
+    var settingsHomeScrollY by rememberSaveable { mutableIntStateOf(0) }
+    val settingsScrollState = rememberScrollState()
+    fun openSettingsTab(tab: Int) {
+        if (settingsTab == -1) settingsHomeScrollY = settingsScrollState.value
+        settingsTab = tab
+    }
+    fun returnToSettingsHome() { settingsTab = -1 }
     LaunchedEffect(resetToHomeRequest) { settingsTab = -1 }
+    LaunchedEffect(settingsTab) {
+        if (settingsTab == -1 && settingsHomeScrollY > 0) settingsScrollState.scrollTo(settingsHomeScrollY)
+    }
 
     val transportOptions = listOf("UDP", "TCP", "TLS")
     val isRegistered = registrationState == SipRegistrationState.REGISTERED
@@ -234,12 +244,12 @@ fun AccountSetupScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .then(if (settingsTab == 8 || settingsTab == 11) Modifier else Modifier.verticalScroll(rememberScrollState()))
+            .then(if (settingsTab == 8 || settingsTab == 11) Modifier else Modifier.verticalScroll(settingsScrollState))
             .padding(horizontal = pageInset, vertical = 6.dp),
         verticalArrangement = Arrangement.spacedBy(5.dp)
     ) {
         // Settings home: list of sections (tap a row to open it); back arrow / back button returns here
-        androidx.activity.compose.BackHandler(enabled = settingsTab != -1) { settingsTab = -1 }
+        androidx.activity.compose.BackHandler(enabled = settingsTab != -1) { returnToSettingsHome() }
         if (settingsTab == -1) {
             val backupSubtitle = "Back up accounts, calls & contacts to a file"
             Card(shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
@@ -254,11 +264,11 @@ fun AccountSetupScreen(
                 }
             }
             SettingsSectionLabel("Accounts & calling")
-            SettingsRow(Icons.Filled.Dns, "SIP Account", "Manage your SIP accounts", MaterialTheme.colorScheme.primary) { settingsTab = 0 }
-            SettingsRow(Icons.Filled.GraphicEq, "Audio & Codec", "Audio devices and supported codecs", MaterialTheme.colorScheme.tertiary) { settingsTab = 1 }
-            SettingsRow(Icons.Filled.MusicNote, "Auto Answer", "Audio file, schedule and microphone", MaterialTheme.colorScheme.tertiary) { settingsTab = 10 }
-            SettingsRow(Icons.AutoMirrored.Filled.PhoneForwarded, "Auto Call", "Import a list and play a recorded SIP message", MaterialTheme.colorScheme.primary) { settingsTab = 8 }
-            SettingsRow(Icons.Filled.PhoneInTalk, "Dialer & Permission", "Phone dialer integration", MaterialTheme.colorScheme.secondary) { settingsTab = 2 }
+            SettingsRow(Icons.Filled.Dns, "SIP Account", "Manage your SIP accounts", MaterialTheme.colorScheme.primary) { openSettingsTab(0) }
+            SettingsRow(Icons.Filled.GraphicEq, "Audio & Codec", "Audio devices and supported codecs", MaterialTheme.colorScheme.tertiary) { openSettingsTab(1) }
+            SettingsRow(Icons.Filled.MusicNote, "Auto Answer", "Audio file, schedule and microphone", MaterialTheme.colorScheme.tertiary) { openSettingsTab(10) }
+            SettingsRow(Icons.AutoMirrored.Filled.PhoneForwarded, "Auto Call", "Import a list and play a recorded SIP message", MaterialTheme.colorScheme.primary) { openSettingsTab(8) }
+            SettingsRow(Icons.Filled.PhoneInTalk, "Dialer & Permission", "Phone dialer integration", MaterialTheme.colorScheme.secondary) { openSettingsTab(2) }
             // কল সেটিং: অটো রেকর্ড অন/অফ সুইচ (সরাসরি প্রধান তালিকায়)
             Row(
                 modifier = Modifier
@@ -300,14 +310,14 @@ fun AccountSetupScreen(
                 )
             }
             SettingsSectionLabel("Network & reliability")
-            SettingsRow(Icons.Filled.BatteryChargingFull, "Power Mode", "Battery mode", MaterialTheme.colorScheme.tertiary) { settingsTab = 4 }
-            SettingsRow(Icons.Filled.MonitorHeart, "Connection Health", "SIP status, retries and failover", MaterialTheme.colorScheme.primary) { settingsTab = 7 }
-            SettingsRow(Icons.Filled.MonitorHeart, "Diagnosis", "Network events and SIP call troubleshooting", MaterialTheme.colorScheme.primary) { settingsTab = 11 }
+            SettingsRow(Icons.Filled.BatteryChargingFull, "Power Mode", "Battery mode", MaterialTheme.colorScheme.tertiary) { openSettingsTab(4) }
+            SettingsRow(Icons.Filled.MonitorHeart, "Connection Health", "SIP status, retries and failover", MaterialTheme.colorScheme.primary) { openSettingsTab(7) }
+            SettingsRow(Icons.Filled.MonitorHeart, "Diagnosis", "Network events and SIP call troubleshooting", MaterialTheme.colorScheme.primary) { openSettingsTab(11) }
             SettingsSectionLabel("Privacy & app")
-            SettingsRow(Icons.Filled.Block, "Blocked numbers", "Calls from these numbers are rejected", MaterialTheme.colorScheme.error) { settingsTab = 5 }
-            SettingsRow(Icons.Filled.ManageAccounts, "User Account", backupSubtitle, MaterialTheme.colorScheme.tertiary) { settingsTab = 3 }
-            SettingsRow(Icons.Filled.SystemUpdate, "App Update", "Check for a new version", MaterialTheme.colorScheme.secondary) { settingsTab = 6 }
-            SettingsRow(Icons.Filled.Palette, "Appearance", "System, light, or dark theme", MaterialTheme.colorScheme.tertiary) { settingsTab = 9 }
+            SettingsRow(Icons.Filled.Block, "Blocked numbers", "Calls from these numbers are rejected", MaterialTheme.colorScheme.error) { openSettingsTab(5) }
+            SettingsRow(Icons.Filled.ManageAccounts, "User Account", backupSubtitle, MaterialTheme.colorScheme.tertiary) { openSettingsTab(3) }
+            SettingsRow(Icons.Filled.SystemUpdate, "App Update", "Check for a new version", MaterialTheme.colorScheme.secondary) { openSettingsTab(6) }
+            SettingsRow(Icons.Filled.Palette, "Appearance", "System, light, or dark theme", MaterialTheme.colorScheme.tertiary) { openSettingsTab(9) }
             // নিচের ঐচ্ছিক ফ্লোটিং উইজেট (SupportSlot) যেন শেষ সারির উপর না পড়ে
             Spacer(modifier = Modifier.height(72.dp))
         } else {
@@ -329,7 +339,7 @@ fun AccountSetupScreen(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(onClick = { settingsTab = -1 }) {
+                IconButton(onClick = { returnToSettingsHome() }) {
                     Icon(
                         Icons.AutoMirrored.Filled.ArrowBack,
                         contentDescription = "Back"

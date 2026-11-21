@@ -4,21 +4,20 @@ import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.NetworkCheck
-import androidx.compose.material.icons.filled.RadioButtonChecked
-import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -39,9 +38,9 @@ fun DiagnosisPanel(modifier: Modifier = Modifier) {
     val rows by Diagnosis.events.collectAsState()
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
-    var filter by remember { mutableStateOf("All") }
+    var filter by rememberSaveable { mutableStateOf("All") }
     var confirmClear by remember { mutableStateOf(false) }
-    val report = remember(rows) { Diagnosis.summary(rows) + if (rows.isEmpty()) "\nNo events recorded yet." else "\n\n" + rows.joinToString("\n") }
+    val report = remember(rows) { Diagnosis.report(context, rows) }
     val parsed = remember(rows) {
         rows.asReversed().map { line ->
             val parts = line.split(" | ", limit = 4)
@@ -56,62 +55,83 @@ fun DiagnosisPanel(modifier: Modifier = Modifier) {
             "Calls" -> event.type in listOf("Call", "Call error", "Connected", "Media")
             "App" -> event.type in listOf("App", "Service")
             else -> true
-        } }.take(100)
+        } }
     }
 
-    Column(modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer), shape = RoundedCornerShape(22.dp)) {
-            Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Icon(Icons.Filled.NetworkCheck, null, tint = MaterialTheme.colorScheme.primary)
-                    Column(Modifier.weight(1f)) {
-                        Text("Connection diagnosis", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        Text("On-device SIP and network event history", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-                Text(if (rows.isEmpty()) "Waiting for connection events" else "${rows.size} events saved • newest first", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("A SIP 401 challenge can be normal when followed by 200. Repeated timeouts mean the server did not answer on that network. VPN registration alone does not confirm voice media is reachable.", style = MaterialTheme.typography.bodySmall, lineHeight = 18.sp)
+    Column(modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 6.dp)) {
+        // Actions stay visible while the report and full event history scroll below.
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(
+                onClick = { clipboard.setText(AnnotatedString(report)); Toast.makeText(context, "Full diagnosis report copied", Toast.LENGTH_SHORT).show() },
+                modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
+            ) {
+                Icon(Icons.Filled.ContentCopy, null, modifier = Modifier.size(17.dp)); Spacer(Modifier.width(6.dp)); Text("Copy full report", maxLines = 1)
+            }
+            OutlinedButton(
+                onClick = { confirmClear = true }, enabled = rows.isNotEmpty(),
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
+            ) {
+                Icon(Icons.Filled.DeleteOutline, null, modifier = Modifier.size(17.dp)); Spacer(Modifier.width(5.dp)); Text("Clear", maxLines = 1)
             }
         }
-
-        Card(shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
-            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Report summary", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleSmall)
-                Text(Diagnosis.summary(rows), style = MaterialTheme.typography.bodySmall, lineHeight = 19.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = { clipboard.setText(AnnotatedString(report)); Toast.makeText(context, "Diagnosis copied", Toast.LENGTH_SHORT).show() }, modifier = Modifier.weight(1f)) {
-                        Icon(Icons.Filled.ContentCopy, null, modifier = Modifier.size(17.dp)); Spacer(Modifier.width(6.dp)); Text("Copy report", maxLines = 1)
-                    }
-                    OutlinedButton(onClick = { confirmClear = true }, enabled = rows.isNotEmpty(), modifier = Modifier.weight(1f)) {
-                        Icon(Icons.Filled.DeleteOutline, null, modifier = Modifier.size(17.dp)); Spacer(Modifier.width(6.dp)); Text("Clear", maxLines = 1)
+        Spacer(Modifier.height(8.dp))
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(9.dp), contentPadding = PaddingValues(bottom = 14.dp)) {
+            item {
+                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer), shape = RoundedCornerShape(18.dp)) {
+                    Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                            Icon(Icons.Filled.NetworkCheck, null, tint = MaterialTheme.colorScheme.primary)
+                            Column(Modifier.weight(1f)) {
+                                Text("Connection diagnosis", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                Text("On-device SIP, call and network analysis", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                        Text("${rows.size} of 500 events saved · newest first", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("Analysis is based on events received by this phone. A 401 followed by 200 is a normal SIP challenge. Registration does not prove that call signaling or audio media works. If no incoming INVITE was received, ask the provider for its call trace.", style = MaterialTheme.typography.bodySmall, lineHeight = 17.sp)
                     }
                 }
             }
-        }
-
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
-            filters.forEach { item ->
-                FilterChip(selected = filter == item, onClick = { filter = item }, label = { Text(item, maxLines = 1) })
-            }
-        }
-        Text("Event timeline", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-        if (parsed.size > 100) Text("Showing the latest 100 timeline events; copying the report includes the full saved history.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        if (visible.isEmpty()) {
-            Card(shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
-                Row(Modifier.fillMaxWidth().padding(18.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Icon(Icons.Filled.Info, null, tint = MaterialTheme.colorScheme.primary)
-                    Text("No events in this view yet. Keep the app open while reproducing the issue.", style = MaterialTheme.typography.bodyMedium)
+            item {
+                Card(shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
+                    Column(Modifier.fillMaxWidth().padding(13.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Analysis summary", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleSmall)
+                        Text(Diagnosis.summary(rows), style = MaterialTheme.typography.bodySmall, lineHeight = 18.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        val insights = remember(rows) { Diagnosis.insights(rows) }
+                        insights.forEach { insight ->
+                            Row(horizontalArrangement = Arrangement.spacedBy(7.dp), verticalAlignment = Alignment.Top) {
+                                Box(Modifier.padding(top = 5.dp).size(6.dp).clip(CircleShape).background(if (insight.first == "Check") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary))
+                                Column {
+                                    Text(insight.first, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = if (insight.first == "Check") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
+                                    Text(insight.second, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                        }
+                    }
                 }
             }
-        } else {
-            LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(7.dp), contentPadding = PaddingValues(bottom = 10.dp)) {
-                items(visible) { event ->
-                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.surfaceContainerLow).border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = .55f), RoundedCornerShape(14.dp)).padding(12.dp), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Box(Modifier.padding(top = 3.dp).size(9.dp).clip(CircleShape).background(eventAccent(event.type)))
+            item {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+                    filters.forEach { item -> FilterChip(selected = filter == item, onClick = { filter = item }, label = { Text(item, maxLines = 1) }) }
+                }
+            }
+            item { Text("Event timeline · ${visible.size} events", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold) }
+            if (visible.isEmpty()) {
+                item {
+                    Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
+                        Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                            Icon(Icons.Filled.Info, null, tint = MaterialTheme.colorScheme.primary)
+                            Text("No events in this view yet. Keep the app open while reproducing the issue.", style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+            } else {
+                items(visible, key = { it.raw }) { event ->
+                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(13.dp)).background(MaterialTheme.colorScheme.surfaceContainerLow).border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = .55f), RoundedCornerShape(13.dp)).padding(11.dp), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                        Box(Modifier.padding(top = 4.dp).size(8.dp).clip(CircleShape).background(eventAccent(event.type)))
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 Text(event.type, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.labelLarge)
-                                Text("• ${event.network}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                                Text("· ${event.network}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                             }
                             Text(event.detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Text(event.time, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
