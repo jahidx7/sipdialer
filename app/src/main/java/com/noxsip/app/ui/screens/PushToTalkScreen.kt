@@ -141,7 +141,7 @@ fun PushToTalkScreen() {
                 .background(if (transmitting) MaterialTheme.colorScheme.tertiary else tone)
                 .border(8.dp, tone.copy(alpha = 0.18f), CircleShape)
                 .pointerInput(hasMicPermission, status, speaker) {
-                    androidx.compose.foundation.gestures.detectTapGestures(onPress = {
+                    detectTapGestures(onPress = {
                         if (!hasMicPermission) {
                             permissionRequest.launch(Manifest.permission.RECORD_AUDIO)
                             return@detectTapGestures
