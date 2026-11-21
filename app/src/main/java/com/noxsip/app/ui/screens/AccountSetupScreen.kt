@@ -1189,6 +1189,7 @@ fun AccountSetupScreen(
                 decorFitsSystemWindows = true
             )
         ) {
+            val compactForm = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp < 390
             Surface(
                 modifier = Modifier.fillMaxSize(),
                 color = MaterialTheme.colorScheme.background
@@ -1202,26 +1203,33 @@ fun AccountSetupScreen(
                         .padding(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 40.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
+                    Surface(
+                        shape = RoundedCornerShape(18.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer
                     ) {
-                        IconButton(onClick = { showForm = false }) {
-                            Icon(Icons.Filled.Close, contentDescription = "Close")
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(start = 14.dp, end = 6.dp, top = 10.dp, bottom = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Box(Modifier.size(40.dp).clip(RoundedCornerShape(13.dp)).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)), contentAlignment = Alignment.Center) {
+                                Icon(Icons.Filled.Dns, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(21.dp))
+                            }
+                            Column(Modifier.weight(1f)) {
+                                Text("SIP ACCOUNT", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                                Text(if (formTarget == null) "Add SIP account" else "Edit SIP account", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                Text("Configure login and connection", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            IconButton(onClick = { showForm = false }) {
+                                Icon(Icons.Filled.Close, contentDescription = "Close")
+                            }
                         }
-                        Text(
-                            text = if (formTarget == null) "Add SIP Account" else "Edit SIP Account",
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
                     }
                     Surface(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            color = MaterialTheme.colorScheme.surface,
-            shadowElevation = 2.dp,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.25f))
+            shape = RoundedCornerShape(18.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.8f))
         ) {
             Column(
                 modifier = Modifier
@@ -1257,13 +1265,13 @@ fun AccountSetupScreen(
                         }
                         Column {
                             Text(
-                                text = if (formTarget == null) "New SIP Account" else "Edit SIP Account",
+                                text = "Account credentials",
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                text = "Extension, Domain & Protocol",
+                                text = "Extension, domain and protocol",
                                 fontSize = 11.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -1305,8 +1313,34 @@ fun AccountSetupScreen(
                     )
                 }
 
-                // Row 1 (2 Columns): Slim Username & Password side-by-side
-                Row(
+                // Keep credentials stacked on narrow phones; use two columns when there is room.
+                if (compactForm) {
+                    SlimInputField(
+                        value = username,
+                        onValueChange = { username = it },
+                        label = "Username *",
+                        placeholder = "1001",
+                        enabled = !formLocked,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    SlimInputField(
+                        value = password,
+                        onValueChange = { password = it },
+                        label = "Password *",
+                        placeholder = "••••••",
+                        enabled = !formLocked,
+                        visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                        trailingContent = {
+                            Icon(
+                                imageVector = if (passwordVisible) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                                contentDescription = "Show Password",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(18.dp).clickable { passwordVisible = !passwordVisible }
+                            )
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                } else Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
@@ -1340,8 +1374,25 @@ fun AccountSetupScreen(
                     )
                 }
 
-                // Row 2 (2 Columns): Slim SIP Domain/IP & Port side-by-side
-                Row(
+                if (compactForm) {
+                    SlimInputField(
+                        value = domain,
+                        onValueChange = { domain = it },
+                        label = "SIP Domain / IP *",
+                        placeholder = "sip.server.com",
+                        enabled = !formLocked,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    SlimInputField(
+                        value = port,
+                        onValueChange = { port = it.filter { c -> c.isDigit() } },
+                        label = "Port",
+                        placeholder = "5060",
+                        keyboardType = KeyboardType.Number,
+                        enabled = !formLocked,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                } else Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
@@ -1422,7 +1473,10 @@ fun AccountSetupScreen(
                 // Collapsible Advanced Fields (proxy plus optional SIP endpoint failover)
                 AnimatedVisibility(visible = showAdvanced) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Row(
+                        if (compactForm) {
+                            SlimInputField(value = displayName, onValueChange = { displayName = it }, label = "Display Name", placeholder = "Optional", enabled = !formLocked, modifier = Modifier.fillMaxWidth())
+                            SlimInputField(value = proxy, onValueChange = { proxy = it }, label = "Outbound Proxy", placeholder = "Optional", enabled = !formLocked, modifier = Modifier.fillMaxWidth())
+                        } else Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -1441,7 +1495,10 @@ fun AccountSetupScreen(
                             fontSize = 10.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        Row(
+                        if (compactForm) {
+                            SlimInputField(value = backupServer, onValueChange = { backupServer = it }, label = "Backup SIP Server (optional)", placeholder = "backup.example.com", enabled = !formLocked, modifier = Modifier.fillMaxWidth())
+                            SlimInputField(value = backupPort, onValueChange = { backupPort = it.filter(Char::isDigit) }, label = "Backup Port", placeholder = "5060", keyboardType = KeyboardType.Number, enabled = !formLocked, modifier = Modifier.fillMaxWidth())
+                        } else Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {

@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -23,6 +24,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -45,6 +47,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -136,18 +139,35 @@ fun AutoCallScreen(
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         item {
-            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
-                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        androidx.compose.material3.Icon(Icons.AutoMirrored.Filled.PhoneForwarded, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                        Text("Sequential SIP Auto Call", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+            Card(
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.16f))
+            ) {
+                Column(Modifier.fillMaxWidth().padding(15.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(11.dp)) {
+                        androidx.compose.foundation.layout.Box(
+                            Modifier.size(42.dp).padding(1.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            androidx.compose.foundation.layout.Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f), RoundedCornerShape(14.dp)), contentAlignment = Alignment.Center) {
+                                androidx.compose.material3.Icon(Icons.AutoMirrored.Filled.PhoneForwarded, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(23.dp))
+                            }
+                        }
+                        Column(Modifier.weight(1f)) {
+                            Text("Auto Call", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                            Text("Sequential SIP campaign", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Surface(shape = RoundedCornerShape(50), color = MaterialTheme.colorScheme.surface.copy(alpha = .65f)) {
+                            Text("${newQueueNumbers.size}/50", modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+                        }
                     }
                     Text(
-                        "Calls one number at a time. The selected voice starts only after the recipient answers and SIP audio is ready; then the call ends after playback. No-answer calls are skipped after 45 seconds.",
+                        "Calls one number at a time. The selected recording plays after the recipient answers and SIP audio is ready. No-answer calls are skipped after 45 seconds.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Text("The handset microphone is muted during playback. Use this only for recipients who agreed to receive recorded calls.", style = MaterialTheme.typography.bodySmall)
+                    Text("The handset microphone is muted during playback. Call only recipients who agreed to receive this recording.", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium)
                 }
             }
         }
@@ -176,20 +196,22 @@ fun AutoCallScreen(
         }
 
         item {
-            OutlinedButton(
+            androidx.compose.material3.Button(
                 onClick = { numberPicker.launch(arrayOf("*/*")) },
                 enabled = !progress.running && !importing,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                shape = RoundedCornerShape(15.dp),
+                colors = ButtonDefaults.filledTonalButtonColors()
             ) {
                 if (importing) CircularProgressIndicator(Modifier.height(18.dp), strokeWidth = 2.dp)
                 else androidx.compose.material3.Icon(Icons.Filled.CloudUpload, contentDescription = null)
-                Text(if (importing) "  Scanning file…" else "  Import & scan spreadsheet or file")
+                Text(if (importing) "  Scanning file…" else "  Import contact list")
             }
         }
 
         importSummary?.let { summary ->
             item {
-                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
+                Card(shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
                     Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(summary.fileName, fontWeight = FontWeight.SemiBold, maxLines = 1)
                         Text("Scanned ${summary.scannedValues} values • Found ${summary.numbers.size} unique mobile numbers", style = MaterialTheme.typography.bodySmall)
@@ -202,13 +224,20 @@ fun AutoCallScreen(
         }
 
         item {
-            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
-                Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Card(
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = .6f))
+            ) {
+                Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         androidx.compose.material3.Icon(Icons.Filled.MicOff, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary)
                         Column(Modifier.weight(1f)) {
-                            Text("Recorded voice (MP3 / WAV)", fontWeight = FontWeight.SemiBold)
-                            Text(voiceName ?: "Choose an MP3 or WAV file", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("Recorded voice", fontWeight = FontWeight.SemiBold)
+                            Text(voiceName ?: "Choose an MP3 or WAV file", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
+                        }
+                        if (voiceReady) Surface(shape = RoundedCornerShape(50), color = Color(0xFF1F8D62).copy(alpha = .14f)) {
+                            Text("Ready", modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp), style = MaterialTheme.typography.labelSmall, color = Color(0xFF4FC18A), fontWeight = FontWeight.SemiBold)
                         }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -225,20 +254,26 @@ fun AutoCallScreen(
         }
 
         if (registrationState != SipRegistrationState.REGISTERED) {
-            item { Text("SIP account is not registered. Connect an account before starting.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+            item {
+                Surface(shape = RoundedCornerShape(13.dp), color = MaterialTheme.colorScheme.errorContainer.copy(alpha = .55f)) {
+                    Text("SIP account is not registered. Connect an account before starting.", modifier = Modifier.fillMaxWidth().padding(12.dp), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium)
+                }
+            }
         }
 
         item {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(checked = consent, onCheckedChange = { consent = it }, enabled = !progress.running)
-                Text("I confirm every recipient agreed to receive this recorded call.", style = MaterialTheme.typography.bodySmall)
+            Card(shape = RoundedCornerShape(15.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 9.dp, vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = consent, onCheckedChange = { consent = it }, enabled = !progress.running)
+                    Text("I confirm every recipient agreed to receive this recorded call.", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium)
+                }
             }
         }
 
         item {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (progress.running) {
-                    OutlinedButton(onClick = { controller.stop() }, modifier = Modifier.fillMaxWidth()) {
+                    OutlinedButton(onClick = { controller.stop() }, modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp), shape = RoundedCornerShape(15.dp)) {
                         androidx.compose.material3.Icon(Icons.Filled.Stop, contentDescription = null)
                         Text("  Stop queue")
                     }
@@ -247,7 +282,8 @@ fun AutoCallScreen(
                         Button(
                             onClick = { queuedRetryStart = true; showStartConfirmation = true },
                             enabled = !importing && voicePath != null && voiceReady && consent,
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                            shape = RoundedCornerShape(15.dp)
                         ) {
                             androidx.compose.material3.Icon(Icons.Filled.Refresh, contentDescription = null)
                             Text("  Start queued retries (${progress.readyCount})")
@@ -261,7 +297,8 @@ fun AutoCallScreen(
                             showStartConfirmation = true
                         },
                         enabled = canPrepareQueue,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
+                        shape = RoundedCornerShape(16.dp)
                     ) {
                         androidx.compose.material3.Icon(Icons.Filled.PlayArrow, contentDescription = null)
                         Text("  Start ${newQueueNumbers.size} calls")
@@ -279,7 +316,8 @@ fun AutoCallScreen(
                     OutlinedButton(
                         onClick = { showClearConfirmation = true },
                         enabled = !progress.running,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 46.dp),
+                        shape = RoundedCornerShape(14.dp)
                     ) {
                         androidx.compose.material3.Icon(Icons.Filled.DeleteSweep, contentDescription = null)
                         Text("  Clear call queue and report")
