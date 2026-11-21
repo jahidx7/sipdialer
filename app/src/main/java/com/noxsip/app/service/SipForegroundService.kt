@@ -257,6 +257,7 @@ class SipForegroundService : Service() {
                                 routeChangeAwaitingCapabilities = false
                                 Log.i(TAG, "No replacement internet route; pausing SIP until connectivity returns")
                                 sipEngine.onNetworkUnavailable()
+                                pttLanEngine.onNetworkChanged()
                             }
                         }
                         noNetworkCheck = check
