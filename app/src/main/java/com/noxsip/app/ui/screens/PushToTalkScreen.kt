@@ -110,7 +110,7 @@ fun PushToTalkScreen() {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(status, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                 Text(
-                    "Keep this screen open on each phone. Devices are discovered automatically on this Wi-Fi. Use a trusted network; nearby NoxSIP devices can hear the live voice stream.",
+                    "Hold here to send. When SIP service is running, this phone can receive in the background. Use a trusted Wi-Fi; nearby NoxSIP devices can hear live voice. Background listening may use extra battery.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
