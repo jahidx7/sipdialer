@@ -6,7 +6,6 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -140,16 +139,23 @@ fun PushToTalkScreen() {
                 .clip(CircleShape)
                 .background(if (transmitting) MaterialTheme.colorScheme.tertiary else tone)
                 .border(8.dp, tone.copy(alpha = 0.18f), CircleShape)
-                .pointerInput(hasMicPermission, status, speaker) {
-                    detectTapGestures(onPress = {
-                        if (!hasMicPermission) {
-                            permissionRequest.launch(Manifest.permission.RECORD_AUDIO)
-                            return@detectTapGestures
+                .pointerInput(hasMicPermission) {
+                    awaitPointerEventScope {
+                        while (true) {
+                            val down = awaitPointerEvent()
+                            if (down.changes.none { it.pressed }) continue
+                            if (!hasMicPermission) {
+                                permissionRequest.launch(Manifest.permission.RECORD_AUDIO)
+                                continue
+                            }
+                            engine.beginTransmit()
+                            try {
+                                while (awaitPointerEvent().changes.any { it.pressed }) Unit
+                            } finally {
+                                engine.endTransmit()
+                            }
                         }
-                        if (speaker == null || speaker == "You") engine.beginTransmit()
-                        tryAwaitRelease()
-                        engine.endTransmit()
-                    })
+                    }
                 },
             contentAlignment = Alignment.Center
         ) {
