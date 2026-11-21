@@ -30,7 +30,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -48,7 +47,7 @@ import com.noxsip.app.ptt.PttLanEngine
 @Composable
 fun PushToTalkScreen() {
     val context = LocalContext.current
-    val engine = androidx.compose.runtime.remember { PttLanEngine(context) }
+    val engine = androidx.compose.runtime.remember { PttLanEngine.getInstance(context) }
     val peers by engine.peersState.collectAsStateWithLifecycle()
     val status by engine.status.collectAsStateWithLifecycle()
     val speaker by engine.speaker.collectAsStateWithLifecycle()
@@ -62,8 +61,10 @@ fun PushToTalkScreen() {
         hasMicPermission = granted
     }
 
-    LaunchedEffect(Unit) { engine.start() }
-    DisposableEffect(engine) { onDispose { engine.stop() } }
+    DisposableEffect(engine) {
+        engine.acquireScreenUse()
+        onDispose { engine.releaseScreenUse() }
+    }
 
     val talking = speaker != null
     val tone = when {
