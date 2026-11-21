@@ -38,7 +38,7 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 
-/** Foreground, same-Wi-Fi push-to-talk. Audio is streamed live and never written to storage. */
+/** Same-Wi-Fi push-to-talk. Audio is streamed live and never written to storage. */
 class PttLanEngine(context: Context) {
     data class Peer(val id: String, val name: String, val lastSeenMs: Long)
 
