@@ -79,6 +79,13 @@ private fun statusText(r: CallRecord): String = when {
     else -> "Outgoing ${durationText(r.duration)}"
 }
 
+private fun callSourceText(source: String): String = when {
+    source.equals("SIM", ignoreCase = true) -> "SIM"
+    source.startsWith("SIM ", ignoreCase = true) -> source
+    source.isBlank() -> ""
+    else -> "SIP • $source"
+}
+
 private fun clock(ms: Int): String {
     val total = (ms / 1000).coerceAtLeast(0)
     return "%02d:%02d".format(total / 60, total % 60)
@@ -157,7 +164,7 @@ fun CallDetailsScreen(
     val shownName = name?.takeIf { it.isNotBlank() } ?: number
     val avatarColor = detailAvatarPalette[(shownName.hashCode() and 0x7fffffff) % detailAvatarPalette.size]
 
-    Column(modifier = modifier.fillMaxSize().background(Color(0xFFF4F5F8))) {
+    Column(modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -203,7 +210,7 @@ fun CallDetailsScreen(
 
             // নম্বর কার্ড
             item {
-                Surface(shape = RoundedCornerShape(16.dp), color = Color.White, modifier = Modifier.fillMaxWidth()) {
+                Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surfaceContainerLow, modifier = Modifier.fillMaxWidth()) {
                     Column {
                         Row(
                             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
@@ -234,7 +241,7 @@ fun CallDetailsScreen(
             }
 
             item {
-                Surface(shape = RoundedCornerShape(16.dp), color = Color.White, modifier = Modifier.fillMaxWidth()) {
+                Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surfaceContainerLow, modifier = Modifier.fillMaxWidth()) {
                     Column {
                         if (records.isEmpty()) {
                             Text(
@@ -252,7 +259,7 @@ fun CallDetailsScreen(
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(detailDate(r.timestamp), fontSize = 16.sp, color = if (missed) Red500 else MaterialTheme.colorScheme.onSurface)
                                         if (r.accountUser.isNotBlank()) {
-                                            Text(r.accountUser, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            Text(callSourceText(r.accountUser), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                         }
                                     }
                                     Text(
@@ -266,14 +273,14 @@ fun CallDetailsScreen(
                                             modifier = Modifier
                                                 .size(42.dp)
                                                 .clip(CircleShape)
-                                                .background(Color(0xFFEDEFF3))
+                                                .background(MaterialTheme.colorScheme.primaryContainer)
                                                 .clickable { togglePlay(r) },
                                             contentAlignment = Alignment.Center
                                         ) {
                                             Icon(
                                                 if (playingId == r.id) Icons.Filled.Pause else Icons.Filled.PlayArrow,
                                                 contentDescription = "Play recording",
-                                                tint = Color(0xFF222222),
+                                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
                                                 modifier = Modifier.size(24.dp)
                                             )
                                         }
@@ -328,13 +335,13 @@ private fun PlaybackBar(progress: Float, onSeek: (Float) -> Unit) {
         contentAlignment = Alignment.CenterStart
     ) {
         // হালকা ধূসর পাতলা ট্র্যাক, তার ওপর ফাঁপা সবুজ রিং থাম্ব (ফোনের প্লেয়ারের মতো)
-        Box(Modifier.fillMaxWidth().height(3.dp).clip(CircleShape).background(Color(0xFFE4E6EA)))
+        Box(Modifier.fillMaxWidth().height(3.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceContainerHighest))
         Box(
             Modifier
                 .offset { IntOffset((p * (widthPx - thumbPx)).toInt(), 0) }
                 .size(22.dp)
                 .clip(CircleShape)
-                .background(Color.White)
+                .background(MaterialTheme.colorScheme.surface)
                 .border(3.dp, Green500, CircleShape)
         )
     }
@@ -343,10 +350,10 @@ private fun PlaybackBar(progress: Float, onSeek: (Float) -> Unit) {
 @Composable
 private fun RoundAction(icon: androidx.compose.ui.graphics.vector.ImageVector, desc: String, onClick: () -> Unit) {
     Box(
-        modifier = Modifier.size(42.dp).clip(CircleShape).background(Color(0xFFEDEFF3)).clickable(onClick = onClick),
+        modifier = Modifier.size(42.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer).clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
-        Icon(icon, contentDescription = desc, tint = Color(0xFF222222), modifier = Modifier.size(20.dp))
+        Icon(icon, contentDescription = desc, tint = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.size(20.dp))
     }
 }
 

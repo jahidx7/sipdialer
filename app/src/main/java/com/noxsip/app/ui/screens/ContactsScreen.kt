@@ -83,6 +83,7 @@ fun ContactsScreen(
         }
     }
 
+    val pageInset = (androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp / 30).coerceIn(10, 22).dp
     val filteredContacts = remember(contacts, searchQuery) {
         val q = searchQuery.trim()
         if (q.isEmpty()) {
@@ -106,7 +107,7 @@ fun ContactsScreen(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 10.dp)
+                .padding(horizontal = pageInset, vertical = 6.dp)
         ) {
             BasicTextField(
                 value = searchQuery,
@@ -143,7 +144,7 @@ fun ContactsScreen(
                         Box(modifier = Modifier.weight(1f)) {
                             if (searchQuery.isEmpty()) {
                                 Text(
-                                    text = "Search Google & phone contacts...",
+                                    text = "Search contacts",
                                     fontSize = 13.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f)
                                 )
@@ -169,10 +170,10 @@ fun ContactsScreen(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 4.dp)
+                .padding(horizontal = pageInset, vertical = 3.dp)
                 .clip(RoundedCornerShape(20.dp))
-                .background(Color(0xFFF2F3F5))
-                .border(1.dp, Color(0xFFE3E5EA), RoundedCornerShape(20.dp))
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(20.dp))
                 .padding(3.dp)
         ) {
             listOf("Phone", "Client", "Office").forEachIndexed { i, label ->
@@ -181,20 +182,20 @@ fun ContactsScreen(
                     modifier = Modifier
                         .weight(1f)
                         .clip(RoundedCornerShape(17.dp))
-                        .background(if (selected) Color.White else Color.Transparent)
+                        .background(if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
                         .clickable(
                             interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
                             indication = null
                         ) { tab = i }
-                        .padding(vertical = 7.dp),
+                        .padding(vertical = 6.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
                         label,
-                        fontSize = 13.sp,
+                        fontSize = 11.sp,
                         maxLines = 1,
                         fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-                        color = if (selected) Color(0xFF111111) else Color(0xFF444B55)
+                        color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
@@ -359,22 +360,23 @@ private fun ContactRow(
     onCall: () -> Unit,
     onLongClick: () -> Unit = {}
 ) {
+    val pageInset = (androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp / 30).coerceIn(10, 22).dp
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .combinedClickable(onClick = onCall, onLongClick = onLongClick)
-            .padding(horizontal = 16.dp, vertical = 11.dp),
+            .padding(horizontal = pageInset, vertical = 3.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
             modifier = Modifier.weight(1f)
         ) {
             Box(
                 modifier = Modifier
-                    .size(40.dp)
+                    .size(30.dp)
                     .clip(CircleShape)
                     .background(Indigo600.copy(alpha = 0.12f)),
                 contentAlignment = Alignment.Center
@@ -383,7 +385,7 @@ private fun ContactRow(
                 if (initial != null) {
                     Text(
                         text = initial.toString(),
-                        fontSize = 15.sp,
+                        fontSize = 14.sp,
                         fontWeight = FontWeight.Bold,
                         color = Indigo600
                     )
@@ -392,7 +394,7 @@ private fun ContactRow(
                         imageVector = Icons.Filled.Person,
                         contentDescription = null,
                         tint = Indigo600,
-                        modifier = Modifier.size(20.dp)
+                        modifier = Modifier.size(17.dp)
                     )
                 }
             }
@@ -400,7 +402,7 @@ private fun ContactRow(
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
                     text = contact.name,
-                    fontSize = 15.sp,
+                    fontSize = 14.sp,
                     fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
@@ -408,7 +410,7 @@ private fun ContactRow(
                 )
                 Text(
                     text = contact.number,
-                    fontSize = 12.sp,
+                    fontSize = 11.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1
                 )
@@ -417,13 +419,13 @@ private fun ContactRow(
 
         IconButton(
             onClick = onCall,
-            modifier = Modifier.size(38.dp)
+            modifier = Modifier.size(48.dp)
         ) {
             Icon(
                 Icons.Filled.Call,
                 contentDescription = "Call",
                 tint = Green500,
-                modifier = Modifier.size(20.dp)
+                modifier = Modifier.size(17.dp)
             )
         }
     }

@@ -72,7 +72,7 @@ fun SavedContactsTab(
         ) {
             Text(
                 text = "$totalInCategory $label contact" + if (totalInCategory == 1) "" else "s",
-                fontSize = 12.sp,
+                fontSize = 11.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Row(
@@ -100,14 +100,14 @@ fun SavedContactsTab(
                     }
                     Text(
                         text = if (totalInCategory == 0) "No $label contacts yet" else "No matching contacts",
-                        fontSize = 15.sp,
+                        fontSize = 14.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     if (totalInCategory == 0) {
                         Text(
                             "Tap Add, or long-press a number in the call log",
-                            fontSize = 12.sp,
+                            fontSize = 11.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
@@ -120,7 +120,7 @@ fun SavedContactsTab(
                         modifier = Modifier
                             .fillMaxWidth()
                             .combinedClickable(onClick = { onCall(c) }, onLongClick = { menuFor = c })
-                            .padding(horizontal = 16.dp, vertical = 11.dp),
+                            .padding(horizontal = (androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp / 30).coerceIn(10, 22).dp, vertical = 6.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -130,12 +130,12 @@ fun SavedContactsTab(
                             modifier = Modifier.weight(1f)
                         ) {
                             Box(
-                                modifier = Modifier.size(40.dp).clip(CircleShape).background(Indigo600.copy(alpha = 0.12f)),
+                                modifier = Modifier.size(30.dp).clip(CircleShape).background(Indigo600.copy(alpha = 0.12f)),
                                 contentAlignment = Alignment.Center
                             ) {
                                 val initial = c.name.firstOrNull { it.isLetter() }?.uppercaseChar()
                                 if (initial != null) {
-                                    Text(initial.toString(), fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Indigo600)
+                                    Text(initial.toString(), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Indigo600)
                                 } else {
                                     Icon(Icons.Filled.Person, contentDescription = null, tint = Indigo600, modifier = Modifier.size(20.dp))
                                 }
@@ -143,7 +143,7 @@ fun SavedContactsTab(
                             Column(verticalArrangement = Arrangement.spacedBy(2.dp), modifier = Modifier.weight(1f, fill = false)) {
                                 Text(
                                     text = c.name,
-                                    fontSize = 15.sp,
+                                    fontSize = 14.sp,
                                     fontWeight = FontWeight.Medium,
                                     color = MaterialTheme.colorScheme.onSurface,
                                     maxLines = 1,
@@ -155,7 +155,7 @@ fun SavedContactsTab(
                                 ) {
                                     Text(
                                         text = c.number,
-                                        fontSize = 12.sp,
+                                        fontSize = 11.sp,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         maxLines = 1
                                     )

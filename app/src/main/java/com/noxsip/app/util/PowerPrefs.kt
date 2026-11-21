@@ -4,8 +4,8 @@ import android.content.Context
 
 /**
  * ব্যাটারি/পাওয়ার মোড।
- * RELIABLE: CPU সারাক্ষণ জাগানো থাকে (ইনকামিং কল সবচেয়ে নির্ভরযোগ্য, ব্যাটারি বেশি খায়)।
- * BALANCED: CPU ঘুমায়; প্রতি ৩০ সেকেন্ডে Alarm দিয়ে অল্প সময় জেগে রেজিস্ট্রেশন তাজা রাখে (Zoiper-এর "Alarm Scheduler"-এর মতো)।
+ * RELIABLE: background SIP registration বজায় রাখতে CPU জাগিয়ে রাখে; ব্যাটারি বেশি খরচ হয়।
+ * BALANCED: কম ব্যাটারি খরচ করে, তবে Android Doze-এ নেটওয়ার্ক ও অ্যালার্ম দেরি হতে পারে।
  */
 object PowerPrefs {
     const val RELIABLE = "reliable"
@@ -17,12 +17,12 @@ object PowerPrefs {
 
     fun mode(context: Context): String {
         val p = prefs(context)
-        return when (val m = p.getString("mode", BALANCED)) {
+        return when (val m = p.getString("mode", RELIABLE)) {
             RELIABLE, BALANCED -> m
             else -> {
-                // পুরনো "stealth" (নোটিফিকেশনবিহীন) মোড সরানো হয়েছে: Balanced-এ নিয়ে যাই
-                p.edit().putString("mode", BALANCED).remove("stealth_active").apply()
-                BALANCED
+                // অজানা/পুরনো মোডকে নির্ভরযোগ্য ব্যাকগ্রাউন্ড ডিফল্টে স্থানান্তর
+                p.edit().putString("mode", RELIABLE).remove("stealth_active").apply()
+                RELIABLE
             }
         }
     }

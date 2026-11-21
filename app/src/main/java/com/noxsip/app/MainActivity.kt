@@ -23,11 +23,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
@@ -44,6 +43,7 @@ import com.noxsip.app.data.AppDatabase
 import com.noxsip.app.service.SipForegroundService
 import com.noxsip.app.sip.SipCallState
 import com.noxsip.app.sip.SipEngine
+import com.noxsip.app.sip.AutoCallController
 import com.noxsip.app.sip.SipRegistrationState
 import com.noxsip.app.telecom.TelecomHelper
 import com.noxsip.app.ui.navigation.Screen
@@ -204,6 +204,15 @@ fun SipDialerApp(
     val lifecycleOwner = LocalLifecycleOwner.current
     val navController = rememberNavController()
     val scope = rememberCoroutineScope()
+    val autoCallController = remember(sipEngine) { AutoCallController.getInstance(context.applicationContext, sipEngine) }
+    val autoCallProgress by autoCallController.progress.collectAsStateWithLifecycle()
+    val autoCallRunning = autoCallProgress.running
+    DisposableEffect(context, autoCallRunning) {
+        val window = (context as? ComponentActivity)?.window
+        if (autoCallRunning) window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        else window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        onDispose { window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
+    }
 
     val registrationState by sipEngine.registrationState.collectAsStateWithLifecycle()
     val registrationError by sipEngine.registrationError.collectAsStateWithLifecycle()
@@ -274,6 +283,7 @@ fun SipDialerApp(
 
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
+    var settingsHomeRequest by remember { mutableIntStateOf(0) }
     // কল-বার পপ-আপের জন্য: কল স্ক্রিন খোলা কি না। নেভিগেশন শুরু হওয়ার মুহূর্তেই জানাই (রিকম্পোজের অপেক্ষা না করে)
     DisposableEffect(navController) {
         val listener = androidx.navigation.NavController.OnDestinationChangedListener { _, destination, _ ->
@@ -284,7 +294,7 @@ fun SipDialerApp(
     }
 
     val incomingTick by com.noxsip.app.telecom.IncomingUiRequest.tick.collectAsStateWithLifecycle()
-    LaunchedEffect(callState, incomingTick) {
+    LaunchedEffect(callState, incomingTick, autoCallRunning) {
         when (callState) {
             is SipCallState.Incoming -> {
                 // লক স্ক্রিন/স্ক্রিন বন্ধ থাকলে, অথবা পপআপে ট্যাপ করলে, পূর্ণ-স্ক্রিন কল পেজ
@@ -302,7 +312,7 @@ fun SipDialerApp(
             is SipCallState.Outgoing,
             is SipCallState.Connected,
             is SipCallState.OnHold -> {
-                if (currentRoute != Screen.InCall.route) {
+                if (!autoCallRunning && currentRoute != Screen.InCall.route) {
                     navController.navigate(Screen.InCall.route) {
                         launchSingleTop = true
                     }
@@ -345,6 +355,7 @@ fun SipDialerApp(
     val bottomNavItems = listOf(
         Triple(Screen.Dialer.route, "Keypad", Icons.Filled.Dialpad),
         Triple(Screen.Contacts.route, "Contacts", Icons.Filled.Contacts),
+        Triple(Screen.PushToTalk.route, "PTT", Icons.Filled.Mic),
         Triple(Screen.Account.route, "Settings", Icons.Filled.Settings),
     )
 
@@ -363,8 +374,6 @@ fun SipDialerApp(
             }
         }
     }
-    var showAccountMenu by remember { mutableStateOf(false) }
-
     // ব্লক তালিকা, ডিটেইলস পেজ থেকে চ্যাট খোলা, WhatsApp/Telegram লিঙ্ক
     LaunchedEffect(Unit) { com.noxsip.app.util.BlockList.init(context) }
     val blockedNumbers by com.noxsip.app.util.BlockList.numbers.collectAsState()
@@ -383,237 +392,78 @@ fun SipDialerApp(
 
     Box(modifier = Modifier.fillMaxSize()) {
         Scaffold(
+            containerColor = MaterialTheme.colorScheme.surface,
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
-            topBar = {
-            if (currentRoute != Screen.InCall.route) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(
-                            Brush.horizontalGradient(
-                                colors = listOf(
-                                    Color(0xFF1E3FA0),
-                                    Color(0xFF2563EB),
-                                    Color(0xFF3B8BEB)
-                                )
-                            )
-                        )
-                        .statusBarsPadding()
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(Color.White.copy(alpha = 0.14f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    Icons.Filled.WifiCalling3,
-                                    contentDescription = null,
-                                    tint = Color.White,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                            Box(modifier = Modifier.weight(1f)) {
-                                Column(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .clickable(enabled = savedAccounts.size > 1) { showAccountMenu = true }
-                                ) {
-                                    Text(
-                                        text = "Nox SIP",
-                                        color = Color.White,
-                                        fontSize = 16.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        maxLines = 1
-                                    )
-                                    Text(
-                                        text = (if (currentAccount != null && currentAccount!!.username.isNotBlank()) {
-                                            currentAccount!!.name.ifBlank { currentAccount!!.username }
-                                        } else {
-                                            "Tap Settings to configure SIP"
-                                        }) + (if (savedAccounts.size > 1) "  ▾" else ""),
-                                        color = Color(0xFFE0ECFF),
-                                        fontSize = 11.sp,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
-                                DropdownMenu(
-                                    expanded = showAccountMenu,
-                                    onDismissRequest = { showAccountMenu = false }
-                                ) {
-                                    savedAccounts.forEach { acc ->
-                                        val st = accountStates[acc.id]
-                                        val dot = when {
-                                            !acc.enabled -> Color(0xFF94A3B8)
-                                            st == SipRegistrationState.REGISTERED -> Color(0xFF34D399)
-                                            st == SipRegistrationState.REGISTERING -> Amber500
-                                            st == SipRegistrationState.ERROR -> Red500
-                                            else -> Color(0xFF94A3B8)
-                                        }
-                                        DropdownMenuItem(
-                                            text = {
-                                                Row(
-                                                    verticalAlignment = Alignment.CenterVertically,
-                                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                                ) {
-                                                    Box(
-                                                        modifier = Modifier
-                                                            .size(8.dp)
-                                                            .clip(CircleShape)
-                                                            .background(dot)
-                                                    )
-                                                    Text(
-                                                        acc.name.ifBlank { acc.username },
-                                                        fontWeight = if (acc.id == currentAccount?.id) FontWeight.Bold else FontWeight.Normal
-                                                    )
-                                                }
-                                            },
-                                            trailingIcon = {
-                                                if (acc.id == currentAccount?.id) {
-                                                    Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = com.noxsip.app.ui.theme.Green500, modifier = Modifier.size(18.dp))
-                                                }
-                                            },
-                                            onClick = {
-                                                showAccountMenu = false
-                                                doSelectAccount(acc.id)
-                                            }
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.width(8.dp))
-
-                        val pillColor = when (registrationState) {
-                            SipRegistrationState.REGISTERED -> Color(0xFF34D399)
-                            SipRegistrationState.REGISTERING -> Amber500
-                            SipRegistrationState.ERROR -> Red500
-                            SipRegistrationState.UNREGISTERED -> Color(0xFF94A3B8)
-                        }
-                        val pillLabel = when (registrationState) {
-                            SipRegistrationState.REGISTERED -> "Online"
-                            SipRegistrationState.REGISTERING -> "Connecting"
-                            SipRegistrationState.ERROR -> "Error"
-                            SipRegistrationState.UNREGISTERED -> "Offline"
-                        }
-
-                        Row(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(20.dp))
-                                .background(Color.Black.copy(alpha = 0.25f))
-                                .border(1.dp, pillColor.copy(alpha = 0.65f), RoundedCornerShape(20.dp))
-                                .clickable {
-                                    navController.navigate(Screen.Account.route) {
-                                        popUpTo(navController.graph.startDestinationId) {
-                                            saveState = true
-                                        }
-                                        launchSingleTop = true
-                                        restoreState = true
-                                    }
-                                }
-                                .padding(horizontal = 12.dp, vertical = 5.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(8.dp)
-                                    .clip(CircleShape)
-                                    .background(pillColor)
-                            )
-                            Text(
-                                text = pillLabel,
-                                color = Color.White,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
-                    }
-                }
-            }
-        },
         bottomBar = {
             // কিবোর্ড খোলা থাকলে নিচের মেনু লুকাই, যাতে মেসেজ বক্স কিবোর্ডের ঠিক ওপরে বসে
             val imeOpen = WindowInsets.ime.getBottom(androidx.compose.ui.platform.LocalDensity.current) > 0
             if (currentRoute != Screen.InCall.route && !imeOpen) {
-                Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 4.dp) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .windowInsetsPadding(NavigationBarDefaults.windowInsets)
-                            .height(64.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        bottomNavItems.forEach { (route, label, icon) ->
-                            val selected = currentRoute == route
-                            // রং সঙ্গে সঙ্গে বদলায় (কোনো ফেড/রিপল নেই)
-                            val tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                            Column(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .fillMaxHeight()
-                                    .clickable(
-                                        interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
-                                        indication = null
-                                    ) {
-                                        navController.navigate(route) {
-                                            popUpTo(navController.graph.startDestinationId) {
-                                                saveState = true
-                                            }
-                                            launchSingleTop = true
-                                            restoreState = true
-                                        }
-                                    },
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.Center
-                            ) {
-                                val badgeCount = when (route) {
-                                    Screen.Dialer.route -> if (selected) 0 else newMissed
-                                    else -> 0
+                NavigationBar(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                    tonalElevation = 0.dp
+                ) {
+                    bottomNavItems.forEach { (route, label, icon) ->
+                        val selected = currentRoute == route
+                        val badgeCount = when (route) {
+                            Screen.Dialer.route -> if (selected) 0 else newMissed
+                            else -> 0
+                        }
+                        NavigationBarItem(
+                            selected = selected,
+                            onClick = {
+                                if (route == Screen.Account.route && currentRoute == Screen.Account.route) {
+                                    settingsHomeRequest++
                                 }
+                                navController.navigate(route) {
+                                    popUpTo(navController.graph.startDestinationId) {
+                                        saveState = true
+                                    }
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
+                            },
+                            icon = {
                                 if (badgeCount > 0) {
                                     BadgedBox(badge = {
-                                        Badge(containerColor = Red500) {
-                                            Text(if (badgeCount > 99) "99+" else badgeCount.toString(), color = Color.White)
+                                        Badge(containerColor = MaterialTheme.colorScheme.error) {
+                                            Text(
+                                                if (badgeCount > 99) "99+" else badgeCount.toString(),
+                                                color = MaterialTheme.colorScheme.onError
+                                            )
                                         }
-                                    }) { Icon(icon, contentDescription = label, tint = tint) }
+                                    }) {
+                                        Icon(icon, contentDescription = label)
+                                    }
                                 } else {
-                                    Icon(icon, contentDescription = label, tint = tint)
+                                    Icon(icon, contentDescription = label)
                                 }
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Text(
-                                    text = label,
-                                    fontSize = 11.sp,
-                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                                    color = tint,
-                                    maxLines = 1
-                                )
-                            }
-                        }
+                            },
+                            label = { Text(label, maxLines = 1) },
+                            alwaysShowLabel = true,
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                selectedTextColor = MaterialTheme.colorScheme.primary,
+                                indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        )
                     }
                 }
             }
         }
     ) { paddingValues ->
         NavHost(
+            enterTransition = { androidx.compose.animation.EnterTransition.None },
+            exitTransition = { androidx.compose.animation.ExitTransition.None },
+            popEnterTransition = { androidx.compose.animation.EnterTransition.None },
+            popExitTransition = { androidx.compose.animation.ExitTransition.None },
             navController = navController,
             startDestination = Screen.Dialer.route,
-            modifier = Modifier.padding(paddingValues)
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .padding(paddingValues)
         ) {
             composable(Screen.Dialer.route) {
                 DialerScreen(
@@ -712,6 +562,31 @@ fun SipDialerApp(
                 )
             }
 
+            composable(Screen.PushToTalk.route) {
+                PushToTalkScreen()
+            }
+
+            composable(Screen.CallHistory.route) {
+                CallHistoryScreen(
+                    callRecords = callRecords,
+                    contacts = allContacts,
+                    onCallBack = { number ->
+                        dialPrefill = number
+                        navController.navigate(Screen.Dialer.route) {
+                            popUpTo(navController.graph.startDestinationId) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    },
+                    onClearHistory = {
+                        scope.launch {
+                            com.noxsip.app.util.CallLogSync.markAllCleared(context)
+                            database.callHistoryDao().deleteAllCallRecords()
+                        }
+                    }
+                )
+            }
+
             composable(Screen.Account.route) {
                 AccountSetupScreen(
                     currentAccount = currentAccount,
@@ -752,6 +627,8 @@ fun SipDialerApp(
                     },
                     registrationState = registrationState,
                     registrationError = registrationError,
+                    resetToHomeRequest = settingsHomeRequest,
+                    autoCallController = autoCallController,
                     accountStates = accountStates,
                     onSaveAndRegister = { account ->
                         scope.launch {
@@ -790,6 +667,56 @@ fun SipDialerApp(
             }
         }
     }
+
+        // A small floating status pill keeps the full-height page layout; it no longer reserves
+        // a separate header strip above any screen.
+        val pillColor = when (registrationState) {
+            SipRegistrationState.REGISTERED -> com.noxsip.app.ui.theme.Green500
+            SipRegistrationState.REGISTERING -> Amber500
+            SipRegistrationState.ERROR -> MaterialTheme.colorScheme.error
+            SipRegistrationState.UNREGISTERED -> MaterialTheme.colorScheme.outline
+        }
+        val pillLabel = when (registrationState) {
+            SipRegistrationState.REGISTERED -> "SIP ready"
+            SipRegistrationState.REGISTERING -> if (registrationError != null) "Retrying" else "Connecting"
+            SipRegistrationState.ERROR -> "Error"
+            SipRegistrationState.UNREGISTERED -> "Offline"
+        }
+        Row(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .statusBarsPadding()
+                .offset(y = (-4).dp)
+                .padding(top = 0.dp, end = 4.dp)
+                .clip(RoundedCornerShape(15.dp))
+                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.92f))
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(15.dp))
+                .clickable {
+                    if (currentRoute == Screen.Account.route) settingsHomeRequest++
+                    navController.navigate(Screen.Account.route) {
+                        popUpTo(navController.graph.startDestinationId) { saveState = true }
+                        launchSingleTop = true
+                        restoreState = true
+                    }
+                }
+                .padding(horizontal = 7.dp, vertical = 3.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(5.dp)
+                    .clip(CircleShape)
+                    .background(pillColor)
+            )
+            Text(
+                text = pillLabel,
+                color = MaterialTheme.colorScheme.onSurface,
+                lineHeight = 11.sp,
+                fontSize = 9.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
 
         // Top Incoming Call Popup inside MainActivity if system overlay permission is not enabled
         val incomingState = callState as? SipCallState.Incoming

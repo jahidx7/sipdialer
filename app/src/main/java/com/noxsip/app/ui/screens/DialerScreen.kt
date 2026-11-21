@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.automirrored.filled.Backspace
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Call
@@ -30,6 +31,8 @@ import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Dialpad
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.StarOutline
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -53,6 +56,7 @@ import com.noxsip.app.ui.components.DialPad
 import com.noxsip.app.ui.theme.Green500
 import com.noxsip.app.ui.theme.Indigo600
 import com.noxsip.app.util.DeviceContact
+import com.noxsip.app.util.FavoriteNumbers
 
 /** পেস্ট করা নম্বরের বাংলা (০-৯), আরবি-ভারতীয় ইত্যাদি যেকোনো ইউনিকোড অঙ্ক ইংরেজি 0-9 করে; শুধু অঙ্ক + * # রাখে */
 internal fun normalizeDialInput(raw: String): String {
@@ -130,6 +134,7 @@ fun DialerScreen(
     val clipboardManager = LocalClipboardManager.current
     // Beta: SIM কল (Telecom দিয়ে); জরুরি নম্বর সবসময় সরাসরি SIM/Telecom দিয়ে, SIP-এ নয়
     val ctx = androidx.compose.ui.platform.LocalContext.current
+    var favoriteNumbers by remember(ctx) { mutableStateOf(FavoriteNumbers.get(ctx)) }
     val sims = remember { com.noxsip.app.telecom.TelecomHelper.getAvailableSimAccounts(ctx) }
     var dialCodeMsg by remember { mutableStateOf<String?>(null) }
     var showCallChooser by remember { mutableStateOf(false) }
@@ -183,15 +188,15 @@ fun DialerScreen(
                             indication = null
                         ) {},
                     shape = RoundedCornerShape(22.dp),
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.surface,
                     shadowElevation = 8.dp,
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0))
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
                 ) {
                     Column(
                         modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 16.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Text("Select Calling Account", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1E293B))
+                        Text("Select Calling Account", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
                         Spacer(Modifier.height(12.dp))
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             val simLabels = if (sims.size > 1) listOf("SIM 1", "SIM 2") else listOf("SIM 1")
@@ -205,7 +210,7 @@ fun DialerScreen(
                             }
                             Box(
                                 modifier = Modifier.weight(1f).height(42.dp).clip(RoundedCornerShape(24.dp))
-                                    .background(Color(0xFF3B6998))
+                                    .background(MaterialTheme.colorScheme.primary)
                                     .clickable {
                                         showCallChooser = false
                                         if (phoneNumber.isNotBlank()) {
@@ -218,14 +223,14 @@ fun DialerScreen(
                                         }
                                     },
                                 contentAlignment = Alignment.Center
-                            ) { Text("SIP", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1) }
+                            ) { Text("SIP", color = MaterialTheme.colorScheme.onPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1) }
                         }
                         Spacer(Modifier.height(10.dp))
                         Box(
                             modifier = Modifier.fillMaxWidth().height(42.dp).clip(RoundedCornerShape(24.dp))
-                                .background(Color(0xFFF1F5F9)).clickable { showCallChooser = false },
+                                .background(MaterialTheme.colorScheme.surfaceContainerHigh).clickable { showCallChooser = false },
                             contentAlignment = Alignment.Center
-                        ) { Text("Cancel", color = Color(0xFF475569), fontSize = 14.sp, fontWeight = FontWeight.Bold) }
+                        ) { Text("Cancel", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp, fontWeight = FontWeight.Bold) }
                     }
                 }
             }
@@ -349,7 +354,7 @@ fun DialerScreen(
                         .fillMaxWidth()
                         .heightIn(min = 44.dp)
                         .clip(RoundedCornerShape(22.dp))
-                        .background(Color(0xFFF0F3FA))
+                        .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                         .padding(horizontal = 16.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -398,28 +403,30 @@ fun DialerScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Text("Dial", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = {
-                        val clip = clipboardManager.getText()?.text?.trim()
-                        val cleaned = clip?.let { normalizeDialInput(it) }
-                        if (!cleaned.isNullOrEmpty()) {
-                            phoneNumber = cleaned
-                            showKeypad = true
-                        }
-                    }) {
-                        Icon(Icons.Filled.ContentPaste, contentDescription = "Paste number", tint = MaterialTheme.colorScheme.onSurface)
+                Text("Dial", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+                Box(Modifier.padding(end = 36.dp)) {
+                    var expanded by remember { mutableStateOf(false) }
+                    IconButton(onClick = { expanded = true }, modifier = Modifier.size(36.dp)) {
+                        Icon(Icons.Filled.MoreVert, contentDescription = "Dial options")
                     }
-                    if (recentCalls.isNotEmpty()) {
-                        IconButton(onClick = { confirmClear = true }) {
-                            Icon(Icons.Filled.DeleteOutline, contentDescription = "Clear call history", tint = MaterialTheme.colorScheme.onSurface)
-                        }
-                    }
-                    IconButton(onClick = {
-                        searchMode = true
-                        showKeypad = false
-                    }) {
-                        Icon(Icons.Filled.Search, contentDescription = "Search contacts", tint = MaterialTheme.colorScheme.onSurface)
+                    DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                        DropdownMenuItem(text = { Text("Paste number") }, onClick = {
+                            expanded = false
+                            val cleaned = clipboardManager.getText()?.text?.trim()?.let { normalizeDialInput(it) }
+                            if (!cleaned.isNullOrEmpty()) {
+                                phoneNumber = cleaned
+                                showKeypad = true
+                            }
+                        })
+                        DropdownMenuItem(text = { Text("Clear call history") }, enabled = recentCalls.isNotEmpty(), onClick = {
+                            expanded = false
+                            confirmClear = true
+                        })
+                        DropdownMenuItem(text = { Text("Search contacts") }, onClick = {
+                            expanded = false
+                            searchMode = true
+                            showKeypad = false
+                        })
                     }
                 }
             }
@@ -521,13 +528,15 @@ fun DialerScreen(
                 }
             } else if (phoneNumber.isNotEmpty() || searchQuery.isNotBlank()) {
                 // কোনো কন্টাক্ট মেলেনি: ফাঁকা (নম্বর কীপ্যাডের উপরের বক্সে দেখায়)
-            } else if (phoneNumber.isEmpty() && recentCalls.isNotEmpty()) {
+            } else if (phoneNumber.isEmpty() && (recentCalls.isNotEmpty() || favoriteNumbers.isNotEmpty())) {
                 val recents = remember(recentCalls, filterTab, sourceTab) {
                     recentCalls
                         .filter {
                             when (sourceTab) {
-                                1 -> it.accountUser != "SIM"
-                                2 -> it.accountUser == "SIM"
+                                1 -> !it.accountUser.equals("SIM", ignoreCase = true) &&
+                                    !it.accountUser.startsWith("SIM ", ignoreCase = true)
+                                2 -> it.accountUser.equals("SIM", ignoreCase = true) ||
+                                    it.accountUser.startsWith("SIM ", ignoreCase = true)
                                 else -> true
                             }
                         }
@@ -542,14 +551,45 @@ fun DialerScreen(
                         .take(300)
                 }
                 Column(modifier = Modifier.fillMaxSize()) {
+                    if (favoriteNumbers.isNotEmpty()) {
+                        Text(
+                            "Speed dial",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.padding(top = 4.dp, bottom = 2.dp)
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(bottom = 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            favoriteNumbers.take(10).forEach { favorite ->
+                                val label = nameByTail[favorite.filter(Char::isDigit).takeLast(10)] ?: favorite
+                                Surface(
+                                    shape = RoundedCornerShape(18.dp),
+                                    color = MaterialTheme.colorScheme.primaryContainer,
+                                    modifier = Modifier.clickable { onCall(favorite) }
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Icon(Icons.Filled.Call, contentDescription = null, tint = Green500, modifier = Modifier.size(16.dp))
+                                        Text(label, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    }
+                                }
+                            }
+                        }
+                    }
                     // All | Missed ফিল্টার
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(vertical = 6.dp)
                             .clip(RoundedCornerShape(20.dp))
-                            .background(Color(0xFFF2F3F5))
-                            .border(1.dp, Color(0xFFE3E5EA), RoundedCornerShape(20.dp))
+                            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(20.dp))
                             .padding(3.dp)
                     ) {
                         listOf("All", "Outgoing", "Received", "Missed").forEachIndexed { tabIndex, label ->
@@ -558,20 +598,20 @@ fun DialerScreen(
                                 modifier = Modifier
                                     .weight(1f)
                                     .clip(RoundedCornerShape(17.dp))
-                                    .background(if (selected) Color.White else Color.Transparent)
+                                    .background(if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
                                     .clickable(
                                         interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
                                         indication = null
                                     ) { filterTab = tabIndex }
-                                    .padding(vertical = 7.dp),
+                                    .padding(vertical = 6.dp),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
                                     label,
-                                    fontSize = 13.sp,
+                                    fontSize = 11.sp,
                                     maxLines = 1,
                                     fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-                                    color = if (selected) Color(0xFF111111) else Color(0xFF444B55)
+                                    color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                         }
@@ -585,12 +625,12 @@ fun DialerScreen(
                             val sel = sourceTab == i
                             Text(
                                 text = label,
-                                fontSize = 12.sp,
+                                fontSize = 11.sp,
                                 fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Medium,
-                                color = if (sel) Color.White else Color(0xFF444B55),
+                                color = if (sel) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(14.dp))
-                                    .background(if (sel) Color(0xFF2563EB) else Color(0xFFF2F3F5))
+                                    .background(if (sel) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHigh)
                                     .clickable { sourceTab = i }
                                     .padding(horizontal = 12.dp, vertical = 5.dp)
                             )
@@ -645,6 +685,11 @@ fun DialerScreen(
                                         group = g,
                                         nameByTail = nameByTail,
                                         blocked = blocked,
+                                        isFavorite = favoriteNumbers.any { FavoriteNumbers.normalize(it) == FavoriteNumbers.normalize(g.number) },
+                                        onToggleFavorite = {
+                                            FavoriteNumbers.toggle(ctx, g.number)
+                                            favoriteNumbers = FavoriteNumbers.get(ctx)
+                                        },
                                         // ট্যাপ করলে কল যায় না: নম্বর ডায়ালপ্যাডে লোড হয়
                                         onClick = {
                                             if (openSwipeKey != null) openSwipeKey = null
@@ -696,13 +741,13 @@ fun DialerScreen(
         Surface(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-            color = Color.White,
-            shadowElevation = 12.dp
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            shadowElevation = 8.dp
         ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
         // নম্বর না থাকলে প্যানেলে শুধু কীপ্যাড; টাইপ/লোড/পেস্ট করলে উপরে নম্বরের সারি যোগ হয়ে প্যানেল উপরের দিকে বড় হয়, মুছলে আবার ছোট
         androidx.compose.animation.AnimatedVisibility(visible = phoneNumber.isNotEmpty()) {
-            Box(modifier = Modifier.fillMaxWidth().background(Color.White), contentAlignment = Alignment.Center) {
+            Box(modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainerLow), contentAlignment = Alignment.Center) {
                 Text(
                     text = formatDialNumber(phoneNumber),
                     fontSize = if (phoneNumber.length > 14) 22.sp else 28.sp,
@@ -742,8 +787,8 @@ fun DialerScreen(
                     ) {
                         Surface(
                             shape = RoundedCornerShape(8.dp),
-                            color = Color.White,
-                            shadowElevation = 8.dp
+                            color = MaterialTheme.colorScheme.surfaceContainer,
+                            shadowElevation = 6.dp
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 if (phoneNumber.isNotEmpty()) {
@@ -816,7 +861,7 @@ fun DialerScreen(
                 Icon(
                     imageVector = Icons.Filled.Dialpad,
                     contentDescription = "Hide keypad",
-                    tint = Color(0xFF222222),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(26.dp)
                 )
             }
@@ -888,7 +933,7 @@ fun DialerScreen(
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.Backspace,
                         contentDescription = "Backspace",
-                        tint = if (phoneNumber.isEmpty()) Color(0xFFB4B9C2) else Color(0xFF444B55),
+                        tint = if (phoneNumber.isEmpty()) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(24.dp)
                     )
                 }
@@ -908,8 +953,8 @@ fun DialerScreen(
             modifier = Modifier
                 .align(Alignment.BottomStart)
                 .padding(start = 20.dp, bottom = if (phoneNumber.isNotEmpty()) 90.dp else 24.dp),
-            containerColor = Color.White,
-            contentColor = Color(0xFF222222),
+            containerColor = MaterialTheme.colorScheme.primaryContainer,
+            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
             shape = CircleShape
         ) {
             Icon(Icons.Filled.Dialpad, contentDescription = "Show keypad")
@@ -961,6 +1006,8 @@ private fun CallGroupRow(
     group: CallGroup,
     nameByTail: Map<String, String>,
     blocked: Boolean,
+    isFavorite: Boolean,
+    onToggleFavorite: () -> Unit,
     onClick: () -> Unit,
     onDetails: () -> Unit
 ) {
@@ -979,10 +1026,10 @@ private fun CallGroupRow(
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.surface)
             .clickable(onClick = onClick)
-            .padding(start = 4.dp, end = 4.dp, top = 14.dp, bottom = 14.dp),
+            .padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(modifier = Modifier.width(40.dp), contentAlignment = Alignment.Center) {
+        Box(modifier = Modifier.width(28.dp), contentAlignment = Alignment.Center) {
             Icon(
                 imageVector = when {
                     isMissed -> Icons.Filled.CallMissed
@@ -998,7 +1045,7 @@ private fun CallGroupRow(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = title,
-                    fontSize = 17.sp,
+                    fontSize = 14.sp,
                     fontWeight = FontWeight.Normal,
                     color = if (isMissed) com.noxsip.app.ui.theme.Red500 else MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
@@ -1008,7 +1055,7 @@ private fun CallGroupRow(
                 if (group.records.size > 1) {
                     Text(
                         text = " (${group.records.size})",
-                        fontSize = 15.sp,
+                        fontSize = 11.sp,
                         fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1
@@ -1016,36 +1063,44 @@ private fun CallGroupRow(
                 }
             }
             if (subtitle.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(3.dp))
+                Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = subtitle,
-                    fontSize = 13.sp,
+                    fontSize = 11.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
             }
         }
+        IconButton(onClick = onToggleFavorite, modifier = Modifier.size(34.dp)) {
+            Icon(
+                if (isFavorite) Icons.Filled.Star else Icons.Filled.StarOutline,
+                contentDescription = if (isFavorite) "Remove speed dial favorite" else "Add to speed dial",
+                tint = if (isFavorite) Color(0xFFF59E0B) else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(16.dp)
+            )
+        }
         Text(
             text = shortTime(latest.timestamp),
-            fontSize = 13.sp,
+            fontSize = 11.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1
         )
-        Spacer(modifier = Modifier.width(10.dp))
+        Spacer(modifier = Modifier.width(4.dp))
         Box(
             modifier = Modifier
                 .size(34.dp)
                 .clip(CircleShape)
-                .background(Color(0xFFEDEFF3))
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                 .clickable(onClick = onDetails),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 Icons.AutoMirrored.Filled.KeyboardArrowRight,
                 contentDescription = "Details",
-                tint = Color(0xFF333333),
-                modifier = Modifier.size(20.dp)
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(17.dp)
             )
         }
     }
@@ -1102,10 +1157,10 @@ internal fun RowScope.SwipeAction(
             .padding(start = 12.dp)
             .size(48.dp)
             .clip(CircleShape)
-            .background(Color(0xFFE9EBF0))
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
-        Icon(icon, contentDescription = label, tint = Color(0xFF222222), modifier = Modifier.size(22.dp))
+        Icon(icon, contentDescription = label, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(22.dp))
     }
 }

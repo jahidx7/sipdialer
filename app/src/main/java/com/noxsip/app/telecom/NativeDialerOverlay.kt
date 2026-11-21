@@ -87,8 +87,8 @@ object NativeDialerOverlay {
             val card = LinearLayout(appContext).apply {
                 orientation = LinearLayout.VERTICAL
                 background = roundedRectWithBorder(
-                    fillColor = Color.WHITE,
-                    strokeColor = Color.parseColor("#E2E8F0"),
+                    fillColor = Color.parseColor("#191A22"),
+                    strokeColor = Color.parseColor("#363844"),
                     radiusPx = dp(appContext, 22),
                     strokePx = dp(appContext, 1)
                 )
@@ -110,10 +110,10 @@ object NativeDialerOverlay {
             // Compact Title Header
             val titleView = TextView(appContext).apply {
                 text = "Select Calling Account"
-                setTextColor(Color.parseColor("#1E293B"))
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+                setTextColor(Color.parseColor("#F3F1FC"))
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
                 setTypeface(typeface, Typeface.BOLD)
-                gravity = Gravity.CENTER
+                gravity = Gravity.START
                 setPadding(0, 0, 0, dp(appContext, 12))
             }
             card.addView(titleView)
@@ -126,7 +126,7 @@ object NativeDialerOverlay {
 
             if (simAccounts.isNotEmpty()) {
                 simAccounts.forEachIndexed { idx, sim ->
-                    val pillColor = if (sim.slotIndex == 1) Color.parseColor("#2E8B6E") else Color.parseColor("#3E7FA6")
+                    val pillColor = if (sim.slotIndex == 1) Color.parseColor("#34445B") else Color.parseColor("#34445B")
                     val isLockedOut = lockedHandle != null &&
                         simAccounts.any { it.handle == lockedHandle } && sim.handle != lockedHandle
                     val pillBtn = createPillButton(
@@ -140,7 +140,7 @@ object NativeDialerOverlay {
                     }
                     pillsRow.addView(
                         pillBtn,
-                        LinearLayout.LayoutParams(0, dp(appContext, 42), 1f).apply {
+                        LinearLayout.LayoutParams(0, dp(appContext, 48), 1f).apply {
                             if (idx > 0) leftMargin = dp(appContext, 8)
                         }
                     )
@@ -150,27 +150,27 @@ object NativeDialerOverlay {
                 val sim1Btn = createPillButton(
                     context = appContext,
                     label = "SIM 1",
-                    bgColor = Color.parseColor("#2E8B6E")
+                    bgColor = Color.parseColor("#34445B")
                 ) {
                     dismiss()
                     onSimSelected(null)
                 }
                 pillsRow.addView(
                     sim1Btn,
-                    LinearLayout.LayoutParams(0, dp(appContext, 42), 1f)
+                    LinearLayout.LayoutParams(0, dp(appContext, 48), 1f)
                 )
 
                 val sim2Btn = createPillButton(
                     context = appContext,
                     label = "SIM 2",
-                    bgColor = Color.parseColor("#3E7FA6")
+                    bgColor = Color.parseColor("#34445B")
                 ) {
                     dismiss()
                     onSimSelected(null)
                 }
                 pillsRow.addView(
                     sim2Btn,
-                    LinearLayout.LayoutParams(0, dp(appContext, 42), 1f).apply {
+                    LinearLayout.LayoutParams(0, dp(appContext, 48), 1f).apply {
                         leftMargin = dp(appContext, 8)
                     }
                 )
@@ -180,7 +180,7 @@ object NativeDialerOverlay {
             val sipBtn = createPillButton(
                 context = appContext,
                 label = "SIP",
-                bgColor = Color.parseColor("#3B6998")
+                bgColor = Color.parseColor("#505B89")
             ) {
                 dismiss()
                 if (number.isNotBlank()) {
@@ -190,7 +190,7 @@ object NativeDialerOverlay {
             }
             pillsRow.addView(
                 sipBtn,
-                LinearLayout.LayoutParams(0, dp(appContext, 42), 1f).apply {
+                LinearLayout.LayoutParams(0, dp(appContext, 48), 1f).apply {
                     leftMargin = dp(appContext, 8)
                 }
             )
@@ -206,13 +206,13 @@ object NativeDialerOverlay {
             // Cancel button (পপআপ বন্ধ, কিছু ডায়াল হবে না)
             val cancelBtn = TextView(appContext).apply {
                 text = "Cancel"
-                setTextColor(Color.parseColor("#475569"))
+                setTextColor(Color.parseColor("#DBDAE8"))
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
                 setTypeface(typeface, Typeface.BOLD)
                 gravity = Gravity.CENTER
                 background = roundedRectWithBorder(
-                    fillColor = Color.parseColor("#F1F5F9"),
-                    strokeColor = Color.parseColor("#E2E8F0"),
+                    fillColor = Color.parseColor("#24252E"),
+                    strokeColor = Color.parseColor("#363844"),
                     radiusPx = dp(appContext, 24),
                     strokePx = dp(appContext, 1)
                 )
@@ -225,7 +225,7 @@ object NativeDialerOverlay {
                 cancelBtn,
                 LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
-                    dp(appContext, 42)
+                    dp(appContext, 48)
                 ).apply { topMargin = dp(appContext, 10) }
             )
 
@@ -254,7 +254,7 @@ object NativeDialerOverlay {
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
             setTypeface(typeface, Typeface.BOLD)
             gravity = Gravity.CENTER
-            background = roundedRect(bgColor, dp(context, 24))
+            background = roundedRect(bgColor, dp(context, 12))
             if (enabled) setOnClickListener { onClick() }
         }
     }
@@ -326,7 +326,7 @@ object NativeDialerOverlay {
             val answerBtn = createPillButton(
                 context = appContext,
                 label = "Answer",
-                bgColor = Color.parseColor("#2E8B6E")
+                bgColor = Color.parseColor("#34445B")
             ) {
                 dismiss()
                 sipEngine.answerCall()

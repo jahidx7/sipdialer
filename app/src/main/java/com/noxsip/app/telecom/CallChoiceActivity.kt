@@ -20,10 +20,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.noxsip.app.ui.theme.Green500
-import com.noxsip.app.ui.theme.Indigo600
 import com.noxsip.app.ui.theme.SipDialerTheme
-import com.noxsip.app.ui.theme.Sky500
 
 class CallChoiceActivity : ComponentActivity() {
 
@@ -56,9 +53,9 @@ class CallChoiceActivity : ComponentActivity() {
                                 indication = null
                             ) {},
                         shape = RoundedCornerShape(22.dp),
-                        color = Color.White,
+                        color = MaterialTheme.colorScheme.surfaceContainerLow,
                         shadowElevation = 8.dp,
-                        border = BorderStroke(1.dp, Color(0xFFE2E8F0))
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
                     ) {
                         Column(
                             modifier = Modifier
@@ -71,7 +68,7 @@ class CallChoiceActivity : ComponentActivity() {
                                 text = "Select Calling Account",
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = Color(0xFF1E293B)
+                                color = MaterialTheme.colorScheme.onSurface
                             )
 
                             // Single row with 3 Pill-Shaped buttons: SIM 1 | SIM 2 | SIP
@@ -85,7 +82,7 @@ class CallChoiceActivity : ComponentActivity() {
                                         ChoicePillButton(
                                             modifier = Modifier.weight(1f),
                                             label = "SIM ${sim.slotIndex}",
-                                            bgColor = if (sim.slotIndex == 1) Green500 else Sky500,
+                                            bgColor = if (sim.slotIndex == 1) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary,
                                             onClick = {
                                                 if (number.isNotBlank()) {
                                                     SipCallRedirectionService.bypassNextNumber = number
@@ -104,7 +101,7 @@ class CallChoiceActivity : ComponentActivity() {
                                     ChoicePillButton(
                                         modifier = Modifier.weight(1f),
                                         label = "SIM 1",
-                                        bgColor = Green500,
+                                        bgColor = MaterialTheme.colorScheme.primary,
                                         onClick = {
                                             if (number.isNotBlank()) {
                                                 SipCallRedirectionService.bypassNextNumber = number
@@ -117,7 +114,7 @@ class CallChoiceActivity : ComponentActivity() {
                                     ChoicePillButton(
                                         modifier = Modifier.weight(1f),
                                         label = "SIM 2",
-                                        bgColor = Sky500,
+                                        bgColor = MaterialTheme.colorScheme.secondary,
                                         onClick = {
                                             if (number.isNotBlank()) {
                                                 SipCallRedirectionService.bypassNextNumber = number
@@ -132,7 +129,7 @@ class CallChoiceActivity : ComponentActivity() {
                                 ChoicePillButton(
                                     modifier = Modifier.weight(1f),
                                     label = "SIP",
-                                    bgColor = Indigo600,
+                                    bgColor = MaterialTheme.colorScheme.tertiary,
                                     onClick = {
                                         if (number.isNotBlank()) {
                                             TelecomHelper.placeSipCallFallback(applicationContext, number)
@@ -146,15 +143,15 @@ class CallChoiceActivity : ComponentActivity() {
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .heightIn(min = 42.dp)
-                                    .clip(RoundedCornerShape(24.dp))
-                                    .background(Color(0xFFF1F5F9))
+                                    .heightIn(min = 48.dp)
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                                     .clickable { finish() },
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
                                     text = "Cancel",
-                                    color = Color(0xFF475569),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     fontSize = 14.sp,
                                     fontWeight = FontWeight.Bold,
                                     textAlign = TextAlign.Center
@@ -177,15 +174,15 @@ private fun ChoicePillButton(
 ) {
     Box(
         modifier = modifier
-            .heightIn(min = 42.dp)
-            .clip(RoundedCornerShape(24.dp))
+            .heightIn(min = 48.dp)
+            .clip(RoundedCornerShape(14.dp))
             .background(bgColor)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Text(
             text = label,
-            color = Color.White,
+            color = MaterialTheme.colorScheme.onPrimary,
             fontSize = 14.sp,
             fontWeight = FontWeight.Bold,
             textAlign = TextAlign.Center

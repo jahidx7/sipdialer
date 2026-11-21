@@ -34,9 +34,11 @@ android {
         if (keystorePropsFile.exists()) {
             create("release") {
                 storeFile = file(keystoreProps.getProperty("storeFile"))
-                storePassword = keystoreProps.getProperty("storePassword")
+                storePassword = System.getenv("ANDROID_SIGNING_PASSWORD")
+                    ?: keystoreProps.getProperty("storePassword")
                 keyAlias = keystoreProps.getProperty("keyAlias")
-                keyPassword = keystoreProps.getProperty("keyPassword")
+                keyPassword = System.getenv("ANDROID_SIGNING_PASSWORD")
+                    ?: keystoreProps.getProperty("keyPassword")
             }
         }
     }
@@ -56,8 +58,8 @@ android {
         create("lite") {
             dimension = "edition"
             applicationIdSuffix = ".lite"
-            versionCode = 5
-            versionName = "1.0.5"
+        versionCode = 36
+        versionName = "1.3.6"
             buildConfigField("String", "VERSION_URL", "\"$updateUrl\"")
         }
     }

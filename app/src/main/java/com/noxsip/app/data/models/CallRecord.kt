@@ -17,5 +17,10 @@ data class CallRecord(
     val duration: Int = 0, // সেকেন্ডে
     val timestamp: Long = System.currentTimeMillis(),
     val recordingPath: String = "",
-    val accountUser: String = "" // কল যে SIP অ্যাকাউন্টের ইউজারনেম দিয়ে হয়েছে
+    val accountUser: String = "", // কল যে SIP অ্যাকাউন্টের ইউজারনেম দিয়ে হয়েছে
+    val codec: String = "",
+    val qualityRating: Float = -1f,
+    val jitterMs: Int = 0,
+    val lossPercent: Float = 0f,
+    val rttMs: Int = 0
 )

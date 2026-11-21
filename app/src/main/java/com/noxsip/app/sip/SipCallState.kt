@@ -11,7 +11,14 @@ sealed class SipCallState {
     data class Outgoing(val remoteAddress: String, val call: Call) : SipCallState()
     data class Connected(val remoteAddress: String, val call: Call) : SipCallState()
     data class OnHold(val remoteAddress: String, val call: Call) : SipCallState()
-    data class Ended(val remoteAddress: String, val reason: String) : SipCallState()
+    data class Ended(
+        val remoteAddress: String,
+        val reason: String,
+        val durationSeconds: Int = 0,
+        val answered: Boolean = false,
+        val protocolCode: Int = 0,
+        val terminationReason: String = ""
+    ) : SipCallState()
 }
 
 /**

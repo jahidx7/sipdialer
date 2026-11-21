@@ -124,10 +124,13 @@ class SipDialerApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         instance = this
+        com.noxsip.app.util.Diagnosis.start(this)
         com.noxsip.app.ui.theme.UiTextScale.load(this)
+        com.noxsip.app.ui.theme.ThemeModePrefs.load(this)
 
         registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
             override fun onActivityResumed(activity: Activity) {
+                com.noxsip.app.util.Diagnosis.record("App", "Resumed " + activity.javaClass.simpleName)
                 if (activity is MainActivity) {
                     isMainActivityVisible = true
                 }
@@ -212,7 +215,7 @@ class SipDialerApplication : Application() {
         core = Factory.instance().createCore(null, null, this)
 
         try {
-            core.config.setInt("sip", "keepalive_period", 15000)
+            core.config.setInt("sip", "keepalive_period", 10000)
             core.config.setInt("sip", "use_rport", 1)
             core.config.setInt("sip", "contact_autorewrite", 1)
             core.config.setInt("sip", "guess_hostname", 1)

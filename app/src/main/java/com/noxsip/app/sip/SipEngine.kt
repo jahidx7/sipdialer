@@ -1,6 +1,9 @@
 package com.noxsip.app.sip
 
+import com.noxsip.app.util.Diagnosis
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
@@ -15,8 +18,10 @@ import com.noxsip.app.telecom.TelecomHelper
 import com.noxsip.app.service.SipForegroundService
 import com.noxsip.app.util.CallNetworkLock
 import com.noxsip.app.util.CallRinger
+import com.noxsip.app.util.AutoAnswerPrefs
 import com.noxsip.app.util.RecordingStorage
 import com.noxsip.app.util.NotificationHelper
+import com.noxsip.app.util.SipConnectionDiagnostics
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -40,8 +45,12 @@ class SipEngine(private val context: Context) {
 
     companion object {
         private const val TAG = "SipEngine"
-        private const val REGISTRATION_TIMEOUT_MS = 15_000L
-        private const val MAX_FAILURES = 2
+        private const val REGISTRATION_TIMEOUT_MS = 10_000L
+        private const val RETRY_BASE_DELAY_MS = 1_500L
+        private const val RETRY_MAX_DELAY_MS = 30_000L
+        private const val PRIMARY_SERVER_PROBE_MS = 5 * 60_000L
+        private const val NETWORK_RESTART_DELAY_MS = 250L
+        private const val NETWORK_RESTART_EVENT_GRACE_MS = 1_500L
 
         @Volatile
         private var INSTANCE: SipEngine? = null
@@ -55,14 +64,254 @@ class SipEngine(private val context: Context) {
 
     private val core: Core get() = SipDialerApplication.core
 
+    private var networkAvailable = true
+    @Volatile private var cellularNetwork = run {
+        val connectivity = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+        val capabilities = connectivity?.let { manager ->
+            manager.activeNetwork?.let(manager::getNetworkCapabilities)
+        }
+        capabilities?.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) == true
+    }
+    /** A successful mobile UDP fallback is remembered; the v2 key deliberately resets 1.1.9's sticky UDP choice. */
+    private val cellularUdpFallback = mutableSetOf<String>().apply {
+        if (cellularNetwork) {
+            addAll(
+                context.getSharedPreferences("sip_network_routes", Context.MODE_PRIVATE)
+                    .getStringSet("cellular_udp_accounts_v2", emptySet())
+                    .orEmpty()
+            )
+        }
+    }
+    private val cellularTransportSwitchPending = HashSet<String>()
+    private val cellularTransportSwitchCount = mutableMapOf<String, Int>()
+    private val configuredAccounts = mutableMapOf<String, SipAccountData>()
+    private val mobileProfile = mutableMapOf<String, Boolean>()
+    private var pendingNetworkRecovery = false
+    private var networkRecoveryTask: Runnable? = null
+    private var networkRestartEventGraceUntil = 0L
+
     /** Balanced মোডের Alarm থেকে ডাকা: ঘুম থেকে জেগে রেজিস্ট্রেশন/NAT তাজা করে (কল চলাকালীন কিছু করে না) */
     fun keepAliveTick() {
         mainHandler.post {
             try {
-                if (core.callsNb == 0 && core.accountList.isNotEmpty()) core.refreshRegisters()
+                if (networkAvailable && core.callsNb == 0 && core.accountList.isNotEmpty()) core.refreshRegisters()
             } catch (_: Exception) {
             }
         }
+    }
+
+    fun onInitialNetwork(isCellular: Boolean) {
+        if (cellularNetwork != isCellular) onNetworkChanged(isCellular)
+    }
+
+    /** Rebuild Linphone signaling channels on the new Android default-network route. */
+    fun onNetworkChanged(isCellular: Boolean? = null) {
+        mainHandler.post {
+            Diagnosis.recordNetworkChange()
+            if (isCellular != null && cellularNetwork != isCellular) {
+                cellularNetwork = isCellular
+                cellularUdpFallback.clear()
+                synchronized(cellularTransportSwitchPending) { cellularTransportSwitchPending.clear() }
+                synchronized(cellularTransportSwitchCount) { cellularTransportSwitchCount.clear() }
+                saveCellularTransportFallbacks()
+                Log.i(TAG, "Default route is ${if (isCellular) "mobile data" else "Wi-Fi/other"}; selecting the configured route transport")
+            }
+            networkAvailable = true
+            pendingNetworkRecovery = true
+            scheduleNetworkRecovery()
+        }
+    }
+
+    private fun preferredTransport(account: SipAccountData, useBackup: Boolean): String = when {
+        useBackup -> account.backupTransport.ifBlank { "UDP" }
+        cellularNetwork && account.id in cellularUdpFallback -> "UDP"
+        cellularNetwork -> account.cellularTransport.ifBlank { "TCP" }
+        else -> account.transport.ifBlank { "UDP" }
+    }
+
+    private fun isExplicitIoFailure(errorInfo: ErrorInfo?, reason: Reason?, message: String): Boolean {
+        if (reason != Reason.IOError && errorInfo?.reason != Reason.IOError) return false
+        val detail = "${errorInfo?.phrase.orEmpty()} $message".lowercase()
+        return detail.contains("io error") || detail.contains("i/o error")
+    }
+
+    private fun isCellularTransportFailure(errorInfo: ErrorInfo?, reason: Reason?, message: String): Boolean {
+        if (isExplicitIoFailure(errorInfo, reason, message)) return true
+        val code = errorInfo?.protocolCode ?: 0
+        val detail = "${errorInfo?.phrase.orEmpty()} $message".lowercase()
+        return reason == Reason.NoResponse || reason == Reason.ServerTimeout ||
+            errorInfo?.reason == Reason.NoResponse || errorInfo?.reason == Reason.ServerTimeout ||
+            code == 408 || detail.contains("no response from sip server") || detail.contains("request timeout")
+    }
+
+    private fun saveCellularTransportFallbacks() {
+        context.getSharedPreferences("sip_network_routes", Context.MODE_PRIVATE)
+            .edit()
+            .putStringSet("cellular_udp_accounts_v2", cellularUdpFallback.toSet())
+            .apply()
+    }
+
+    /** Alternate TCP/UDP on mobile when registration or call signaling gets no SIP response. */
+    private fun switchCellularTransportAfterFailure(id: String, cause: String): Boolean {
+        val configured = configuredAccounts[id] ?: return false
+        val active = registeredData[id] ?: return false
+        if (!cellularNetwork || !networkAvailable || id in backupActive ||
+            configured.cellularTransport.uppercase() !in setOf("TCP", "UDP")
+        ) return false
+
+        val currentTransport = active.transport.uppercase()
+        val targetTransport = when (currentTransport) {
+            "TCP" -> "UDP"
+            "UDP" -> "TCP"
+            else -> return false
+        }
+        val alreadyPending = synchronized(cellularTransportSwitchPending) {
+            !cellularTransportSwitchPending.add(id)
+        }
+        if (alreadyPending) return true
+        val switchCount = synchronized(cellularTransportSwitchCount) {
+            val next = (cellularTransportSwitchCount[id] ?: 0) + 1
+            cellularTransportSwitchCount[id] = next
+            next
+        }
+        if (switchCount > 2) {
+            synchronized(cellularTransportSwitchPending) { cellularTransportSwitchPending.remove(id) }
+            Log.w(TAG, "Cellular TCP/UDP alternatives exhausted for $id; continuing with backup/retry")
+            return false
+        }
+
+        if (targetTransport == "UDP") cellularUdpFallback.add(id)
+        else cellularUdpFallback.remove(id)
+        saveCellularTransportFallbacks()
+        Diagnosis.record("Route", "Recovery: $currentTransport to $targetTransport")
+        Log.w(TAG, "Mobile SIP $currentTransport failed for $id ($cause); trying $targetTransport")
+
+        lateinit var retry: Runnable
+        retry = Runnable {
+            if (!cellularNetwork || !networkAvailable) {
+                synchronized(cellularTransportSwitchPending) { cellularTransportSwitchPending.remove(id) }
+                return@Runnable
+            }
+            val latest = registeredData[id]
+            if (latest == null || !latest.transport.equals(currentTransport, ignoreCase = true)) {
+                synchronized(cellularTransportSwitchPending) { cellularTransportSwitchPending.remove(id) }
+                return@Runnable
+            }
+            if (core.callsNb > 0) {
+                mainHandler.postDelayed(retry, 500L)
+                return@Runnable
+            }
+            registerOnEndpoint(
+                configured.copy(transport = targetTransport),
+                select = currentAccount?.id == id,
+                useBackup = false
+            )
+            setAccState(
+                id,
+                SipRegistrationState.REGISTERING,
+                error = "Mobile $currentTransport received no SIP reply; trying $targetTransport."
+            )
+        }
+        mainHandler.postDelayed(retry, 350L)
+        return true
+    }
+
+    /** Tell Linphone to close stale SIP/NAT sockets while Android has no default internet route. */
+    fun onNetworkUnavailable() {
+        Diagnosis.record("Network", "Default route lost")
+        mainHandler.post {
+            networkAvailable = false
+            pendingNetworkRecovery = false
+            networkRecoveryTask?.let(mainHandler::removeCallbacks)
+            networkRecoveryTask = null
+            val waitMessage = "Waiting for an internet network. SIP will reconnect automatically when Wi-Fi or mobile data returns."
+            registeredData.keys.toList().forEach { id ->
+                registrationRetries.remove(id)?.let(mainHandler::removeCallbacks)
+                registrationRetryAttempts.remove(id)
+                regTimeouts.remove(id)?.let(mainHandler::removeCallbacks)
+                SipConnectionDiagnostics.waitingForNetwork(context, id, waitMessage)
+                setAccState(id, SipRegistrationState.REGISTERING, error = waitMessage)
+            }
+            try {
+                core.isNetworkReachable = false
+            } catch (e: Exception) {
+                Log.w(TAG, "Could not mark SIP network unreachable: ${e.message}")
+            }
+        }
+    }
+
+    private fun scheduleNetworkRecovery() {
+        networkRecoveryTask?.let(mainHandler::removeCallbacks)
+        lateinit var task: Runnable
+        task = Runnable {
+            if (networkRecoveryTask !== task) return@Runnable
+            networkRecoveryTask = null
+            if (!networkAvailable || !pendingNetworkRecovery) return@Runnable
+            if (core.callsNb > 0) {
+                Log.i(TAG, "Network changed during an active call; SIP re-registration will follow call end")
+                return@Runnable
+            }
+
+            val ids = registeredData.keys.toList()
+            if (ids.isEmpty()) {
+                pendingNetworkRecovery = false
+                try { core.isNetworkReachable = true } catch (_: Exception) {}
+                return@Runnable
+            }
+
+            ids.forEach { id ->
+                registrationRetries.remove(id)?.let(mainHandler::removeCallbacks)
+                registrationRetryAttempts.remove(id)
+                regTimeouts.remove(id)?.let(mainHandler::removeCallbacks)
+                setAccState(id, SipRegistrationState.REGISTERING)
+                SipConnectionDiagnostics.attempted(context, id)
+            }
+
+            try {
+                // Linphone documents FALSE→TRUE as the way to restart channels after an IP/interface
+                // change; setting TRUE makes it reconnect and refresh every SIP registration.
+                core.isNetworkReachable = false
+                mainHandler.postDelayed({
+                    if (!networkAvailable) return@postDelayed
+                    if (core.callsNb > 0) {
+                        pendingNetworkRecovery = true
+                        return@postDelayed
+                    }
+                    try {
+                        core.isNetworkReachable = true
+                        pendingNetworkRecovery = false
+                        networkRestartEventGraceUntil = SystemClock.elapsedRealtime() + NETWORK_RESTART_EVENT_GRACE_MS
+                        ids.forEach { id ->
+                            val active = registeredData[id] ?: return@forEach
+                            val configured = configuredAccounts[id] ?: active
+                            val usingBackup = id in backupActive
+                            val targetTransport = preferredTransport(configured, usingBackup)
+                            if (mobileProfile[id] != cellularNetwork || !active.transport.equals(targetTransport, ignoreCase = true)) {
+                                val accountForRoute = configured.copy(transport = targetTransport)
+                                Log.i(TAG, "Re-registering $id over $targetTransport after route change")
+                                registerOnEndpoint(accountForRoute, select = currentAccount?.id == id, useBackup = usingBackup)
+                            } else {
+                                armRegistrationTimeout(id)
+                            }
+                        }
+                        Log.i(TAG, "SIP signaling restarted for ${ids.size} account(s) after network handover")
+                    } catch (e: Exception) {
+                        Log.w(TAG, "SIP network recovery failed: ${e.message}")
+                        ids.filter(registeredData::containsKey).forEach { id ->
+                            scheduleRegistrationRetry(id, "Could not restart SIP after a network change. Retrying automatically.")
+                        }
+                    }
+                }, NETWORK_RESTART_DELAY_MS)
+            } catch (e: Exception) {
+                Log.w(TAG, "Could not restart SIP signaling after network change: ${e.message}")
+                pendingNetworkRecovery = false
+                ids.filter(registeredData::containsKey).forEach { id ->
+                    scheduleRegistrationRetry(id, "Could not restart SIP after a network change. Retrying automatically.")
+                }
+            }
+        }
+        networkRecoveryTask = task
+        mainHandler.postDelayed(task, 100L)
     }
 
     /** নির্বাচিত (সবুজ টিক) অ্যাকাউন্টের অবস্থা; পুরনো UI এটাই দেখে */
@@ -85,6 +334,9 @@ class SipEngine(private val context: Context) {
 
     private val _callState = MutableStateFlow<SipCallState>(SipCallState.Idle)
     val callState: StateFlow<SipCallState> = _callState.asStateFlow()
+
+    private val _callMediaReady = MutableStateFlow(false)
+    val callMediaReady: StateFlow<Boolean> = _callMediaReady.asStateFlow()
 
     private val _isMuted = MutableStateFlow(false)
     val isMuted: StateFlow<Boolean> = _isMuted.asStateFlow()
@@ -157,6 +409,10 @@ class SipEngine(private val context: Context) {
     private val authChallenges = HashMap<String, Int>()
     private val stoppedByError = HashSet<String>()
     private val regTimeouts = HashMap<String, Runnable>()
+    private val registrationRetries = HashMap<String, Runnable>()
+    private val registrationRetryAttempts = HashMap<String, Int>()
+    private val backupActive = HashSet<String>()
+    private val primaryProbeTasks = HashMap<String, Runnable>()
 
     private fun cleanUser(a: SipAccountData) = a.username.trim().substringBefore("@")
     private fun cleanDomain(a: SipAccountData) = parseHostAndPort(a.domain, a.port).first
@@ -197,6 +453,10 @@ class SipEngine(private val context: Context) {
     private var activeCallConnected = false
     private var activeCallRecorded = false
     private var activeRecordingPath: String = ""
+    private var pendingAutoAnswerAudioRemote: String? = null
+    private var activeAutoAnswerAudioPlayer: Player? = null
+    private var activeAutoCallAudioPlayer: Player? = null
+    @Volatile private var autoCallMicLocked = false
 
     // ---- ইনকামিং কল "কলার কেটে দিয়েছে" শনাক্তকরণ (CANCEL না পাঠানো গেটওয়ের জন্য) ----
     // কিছু PSTN গেটওয়ে (যেমন SemuxGW) কলার কাটলে CANCEL পাঠায় না; শুধু প্রতি ~৩ সেকেন্ডে INVITE
@@ -227,6 +487,7 @@ class SipEngine(private val context: Context) {
     private val sipLogListener = object : LoggingServiceListener {
         override fun onLogMessageWritten(service: LoggingService, domain: String, level: LogLevel, message: String) {
             try {
+                Diagnosis.signaling(message)
                 // সার্ভার থেকে আসা INVITE (নতুন বা পুনঃপ্রেরিত); আমাদের পাঠানো বার্তা বাদ
                 val isInboundInvite = (message.contains("new bytes from") && message.contains("INVITE sip:")) ||
                         message.startsWith("INVITE sip:")
@@ -288,6 +549,44 @@ class SipEngine(private val context: Context) {
         }
     }
 
+    private fun startAutoAnswerAudio(call: Call, remoteAddress: String) {
+        if (pendingAutoAnswerAudioRemote != remoteAddress) return
+        pendingAutoAnswerAudioRemote = null
+        val audioPath = AutoAnswerPrefs.audioPath(context)
+        if (audioPath == null) {
+            Log.i(TAG, "Auto-answer has no selected audio file")
+            return
+        }
+        try {
+            val player = call.player
+            val openResult = player.open(audioPath)
+            if (openResult < 0) {
+                Log.w(TAG, "Linphone could not open the selected Auto Answer audio")
+                try { player.close() } catch (_: Exception) {}
+                return
+            }
+            val startResult = player.start()
+            if (startResult < 0) {
+                Log.w(TAG, "Linphone could not start Auto Answer audio playback")
+                try { player.close() } catch (_: Exception) {}
+                return
+            }
+            activeAutoAnswerAudioPlayer = player
+            Log.i(TAG, "Auto-answer audio playback started")
+        } catch (e: Exception) {
+            Log.w(TAG, "Auto-answer audio playback failed: ${e.message}")
+        }
+    }
+
+    private fun stopAutoAnswerAudio() {
+        try {
+            activeAutoAnswerAudioPlayer?.close()
+        } catch (_: Exception) {
+        }
+        activeAutoAnswerAudioPlayer = null
+        pendingAutoAnswerAudioRemote = null
+    }
+
     private fun prepareRecordingPath(remote: String): String {
         if (!TelecomHelper.isAutoRecordEnabled(context)) return ""
         return try {
@@ -305,21 +604,146 @@ class SipEngine(private val context: Context) {
         }
     }
 
+    private fun armRegistrationTimeout(id: String) {
+        regTimeouts.remove(id)?.let { mainHandler.removeCallbacks(it) }
+        val timeout = makeRegistrationTimeout(id)
+        regTimeouts[id] = timeout
+        mainHandler.postDelayed(timeout, if (cellularNetwork) 15_000L else REGISTRATION_TIMEOUT_MS)
+    }
+
     private fun makeRegistrationTimeout(id: String): Runnable = Runnable {
         if (_accountStates.value[id] == SipRegistrationState.REGISTERING) {
-            val data = registeredData[id]
-            val transport = data?.transport ?: "UDP"
-            val port = data?.port ?: 5060
-            stopWithError(
+            val data = registeredData[id] ?: return@Runnable
+            val route = SipConnectionDiagnostics.snapshot(context, id)
+            val transport = route.transport
+            val port = route.port
+            Diagnosis.record("Registration error", "No response before local registration timer; $transport/$port")
+            val timeoutMessage = "No response from SIP server ($transport port $port). Retrying automatically; check the Domain/IP, port, and internet if this continues."
+            synchronized(cellularTransportSwitchPending) { cellularTransportSwitchPending.remove(id) }
+            if (cellularNetwork && switchCellularTransportAfterFailure(id, timeoutMessage)) return@Runnable
+            scheduleRegistrationRetry(
                 id,
-                "No response from SIP server ($transport port $port). " +
-                        "Please check the Domain/IP, Port, and internet connection."
+                timeoutMessage
             )
         }
     }
 
+    /**
+     * A temporary SIP/network failure must not disable REGISTER permanently.
+     * Retry with bounded exponential backoff until registration succeeds or the user disables the account.
+     */
+    private fun scheduleRegistrationRetry(id: String, message: String) {
+        if (!registeredData.containsKey(id) || id in stoppedByError) return
+        SipConnectionDiagnostics.failed(context, id, message)
+        if (!networkAvailable) {
+            val waitMessage = "Waiting for an internet network. SIP will reconnect automatically when Wi-Fi or mobile data returns."
+            SipConnectionDiagnostics.waitingForNetwork(context, id, waitMessage)
+            _accountErrors.value = _accountErrors.value + (id to waitMessage)
+            _accountStates.value = _accountStates.value + (id to SipRegistrationState.REGISTERING)
+            publishSelected()
+            return
+        }
+        if (SystemClock.elapsedRealtime() < networkRestartEventGraceUntil) {
+            // Linphone can report Cleared/Failed while it discards the old interface socket.
+            // Give its immediate re-registration a short window before considering backup/failure.
+            regTimeouts.remove(id)?.let(mainHandler::removeCallbacks)
+            setAccState(id, SipRegistrationState.REGISTERING)
+            armRegistrationTimeout(id)
+            return
+        }
+        if (cellularNetwork && isCellularTransportFailure(null, null, message) &&
+            switchCellularTransportAfterFailure(id, message)
+        ) return
+        if (switchToBackupAfterFailure(id, message)) return
+        regTimeouts.remove(id)?.let { mainHandler.removeCallbacks(it) }
+        _accountErrors.value = _accountErrors.value + (id to message)
+        _accountStates.value = _accountStates.value + (id to SipRegistrationState.REGISTERING)
+        publishSelected()
+        if (registrationRetries.containsKey(id)) return
+
+        val attempt = (registrationRetryAttempts[id] ?: 0) + 1
+        registrationRetryAttempts[id] = attempt
+        val exponent = (attempt - 1).coerceAtMost(5)
+        val delayMs = (RETRY_BASE_DELAY_MS * (1L shl exponent)).coerceAtMost(RETRY_MAX_DELAY_MS)
+        lateinit var retry: Runnable
+        retry = Runnable {
+            if (registrationRetries[id] !== retry) return@Runnable
+            registrationRetries.remove(id)
+            val data = registeredData[id] ?: return@Runnable
+            if (id in stoppedByError) return@Runnable
+            try {
+                val account = core.getAccountByIdkey(id)
+                if (account == null) {
+                    registerOnEndpoint(data, select = currentAccount?.id == id, useBackup = id in backupActive)
+                    return@Runnable
+                }
+                SipConnectionDiagnostics.attempted(context, id)
+                val params = account.params.clone()
+                params.isRegisterEnabled = true
+                account.params = params
+                core.refreshRegisters()
+                armRegistrationTimeout(id)
+                Log.i(TAG, "SIP registration retry $attempt started for $id")
+            } catch (e: Exception) {
+                Log.w(TAG, "SIP registration retry failed to start for $id: ${e.message}")
+                scheduleRegistrationRetry(id, message)
+            }
+        }
+        registrationRetries[id] = retry
+        SipConnectionDiagnostics.retryScheduled(context, id, System.currentTimeMillis() + delayMs, attempt)
+        Log.i(TAG, "SIP registration retry $attempt for $id in ${delayMs}ms")
+        mainHandler.postDelayed(retry, delayMs)
+    }
+
+    /** Move the same SIP identity to the configured backup after a temporary primary failure. */
+    private fun switchToBackupAfterFailure(id: String, message: String): Boolean {
+        val data = configuredAccounts[id] ?: registeredData[id] ?: return false
+        if (data.backupServer.isBlank() || id in backupActive) return false
+        Log.w(TAG, "Primary SIP endpoint failed for $id; switching to configured backup")
+        registrationRetries.remove(id)?.let { mainHandler.removeCallbacks(it) }
+        registrationRetryAttempts.remove(id)
+        regTimeouts.remove(id)?.let { mainHandler.removeCallbacks(it) }
+        registeredData.remove(id)
+        removeLinphoneAccount(id)
+        registerOnEndpoint(data, select = currentAccount?.id == id, useBackup = true)
+        setAccState(id, SipRegistrationState.REGISTERING, error = "Primary unavailable; trying backup server. $message")
+        return true
+    }
+
+    private fun switchEndpoint(id: String, useBackup: Boolean) {
+        if ((id in backupActive) == useBackup) return
+        val data = configuredAccounts[id] ?: registeredData[id] ?: return
+        primaryProbeTasks.remove(id)?.let { mainHandler.removeCallbacks(it) }
+        registrationRetries.remove(id)?.let { mainHandler.removeCallbacks(it) }
+        registrationRetryAttempts.remove(id)
+        regTimeouts.remove(id)?.let { mainHandler.removeCallbacks(it) }
+        registeredData.remove(id)
+        removeLinphoneAccount(id)
+        val routeAccount = if (useBackup) {
+            data.copy(transport = data.backupTransport.ifBlank { "UDP" })
+        } else {
+            data.copy(transport = preferredTransport(data, useBackup = false))
+        }
+        registerOnEndpoint(routeAccount, select = currentAccount?.id == id, useBackup = useBackup)
+    }
+
+    private fun schedulePrimaryProbe(id: String) {
+        primaryProbeTasks.remove(id)?.let { mainHandler.removeCallbacks(it) }
+        val task = Runnable {
+            if (id in backupActive && registeredData.containsKey(id)) {
+                Log.i(TAG, "Probing primary SIP endpoint for $id")
+                switchEndpoint(id, useBackup = false)
+            }
+        }
+        primaryProbeTasks[id] = task
+        mainHandler.postDelayed(task, PRIMARY_SERVER_PROBE_MS)
+    }
+
     private fun stopWithError(id: String, message: String) {
+        SipConnectionDiagnostics.failed(context, id, message)
         stoppedByError.add(id)
+        registrationRetries.remove(id)?.let { mainHandler.removeCallbacks(it) }
+        registrationRetryAttempts.remove(id)
         regTimeouts.remove(id)?.let { mainHandler.removeCallbacks(it) }
         try {
             core.getAccountByIdkey(id)?.let { acc ->
@@ -364,9 +788,11 @@ class SipEngine(private val context: Context) {
                 "Account/extension not found on server (404 Not Found)." to true
             lower.contains("certificate") || lower.contains("ssl") || lower.contains("tls") ->
                 "TLS connection failed ($phrase). Try switching Transport to UDP and Port to 5060." to true
-            code == 408 || code == 503 || reason == Reason.NoResponse ||
+            code == 503 ->
+                "SIP server temporarily unavailable (503: $phrase). Retrying automatically; check the server load and registration service." to false
+            code == 408 || reason == Reason.NoResponse ||
                     reason == Reason.ServerTimeout || reason == Reason.IOError ->
-                "Cannot reach server (${if (code > 0) "Code $code" else phrase}). Check Domain/IP, Port, and Transport (UDP/TCP)." to false
+                "No response from SIP server (${if (code > 0) "Code $code" else phrase}). Retrying automatically; check Domain/IP, Port, Transport, and internet." to false
             code > 0 -> "Registration failed (Code $code: $phrase)" to false
             else -> "Registration failed: ${phrase.ifBlank { "Unknown error" }}" to false
         }
@@ -468,37 +894,58 @@ class SipEngine(private val context: Context) {
             reason: Reason?,
             message: String
         ) {
+            Diagnosis.record(if (state == RegistrationState.Failed) "Registration error" else "Registration", "$state; SIP code=${errorInfo?.protocolCode ?: 0}; reason=$reason")
             when (state) {
-                RegistrationState.Ok, RegistrationState.Refreshing -> {
+                RegistrationState.Refreshing -> Unit
+                RegistrationState.Ok -> {
+                    synchronized(cellularTransportSwitchPending) { cellularTransportSwitchPending.remove(id) }
+                    if (state == RegistrationState.Ok) {
+                        synchronized(cellularTransportSwitchCount) { cellularTransportSwitchCount.remove(id) }
+                    }
                     regTimeouts.remove(id)?.let { mainHandler.removeCallbacks(it) }
+                    registrationRetries.remove(id)?.let { mainHandler.removeCallbacks(it) }
+                    registrationRetryAttempts.remove(id)
                     failureCounts[id] = 0
                     authChallenges[id] = 0
                     stoppedByError.remove(id)
+                    SipConnectionDiagnostics.registered(context, id)
                     setAccState(id, SipRegistrationState.REGISTERED, clearError = true)
+                    if (id in backupActive) schedulePrimaryProbe(id)
+                    else primaryProbeTasks.remove(id)?.let { mainHandler.removeCallbacks(it) }
                 }
                 RegistrationState.Progress -> {
                     if (id !in stoppedByError && registeredData.containsKey(id)) {
+                        registrationRetries.remove(id)?.let { mainHandler.removeCallbacks(it) }
+                        if (!regTimeouts.containsKey(id)) armRegistrationTimeout(id)
                         setAccState(id, SipRegistrationState.REGISTERING)
                     }
                 }
                 RegistrationState.Failed -> {
                     if (!registeredData.containsKey(id)) return // ডিসকানেক্ট করা অবস্থায় ব্যর্থতা এরর নয়
+                    regTimeouts.remove(id)?.let { mainHandler.removeCallbacks(it) }
+                    synchronized(cellularTransportSwitchPending) { cellularTransportSwitchPending.remove(id) }
                     val n = (failureCounts[id] ?: 0) + 1
                     failureCounts[id] = n
+                    if (cellularNetwork && isCellularTransportFailure(errorInfo, reason, message) &&
+                        switchCellularTransportAfterFailure(id, message)
+                    ) {
+                        return
+                    }
                     val (msg, fatal) = describeFailure(errorInfo, reason, message)
+                    SipConnectionDiagnostics.failed(context, id, msg)
                     Log.w(TAG, "Registration failed [$id] (#$n, fatal=$fatal): $msg")
-                    if (fatal || n >= MAX_FAILURES) {
+                    if (fatal) {
                         mainHandler.post { stopWithError(id, msg) }
                     } else {
-                        // সাময়িক ব্যর্থতা: আর "Connected" নয়, পুনঃচেষ্টা চলছে বলে দেখাই (ঠিক হলে Ok এসে এরর মুছবে)
-                        _accountErrors.value = _accountErrors.value + (id to msg)
-                        _accountStates.value = _accountStates.value + (id to SipRegistrationState.REGISTERING)
-                        publishSelected()
+                        mainHandler.post { scheduleRegistrationRetry(id, msg) }
                     }
                 }
                 RegistrationState.Cleared, RegistrationState.None -> {
                     if (id !in stoppedByError && registeredData.containsKey(id)) {
-                        setAccState(id, SipRegistrationState.UNREGISTERED)
+                        regTimeouts.remove(id)?.let { mainHandler.removeCallbacks(it) }
+                        mainHandler.post {
+                            scheduleRegistrationRetry(id, "SIP registration was lost. Reconnecting automatically.")
+                        }
                     }
                 }
             }
@@ -529,7 +976,21 @@ class SipEngine(private val context: Context) {
             state: Call.State,
             message: String
         ) {
+            val code = call.errorInfo?.protocolCode ?: 0
+            val kind = when (state) {
+                Call.State.Error -> "Call error"
+                Call.State.Connected -> "Connected"
+                else -> "Call"
+            }
+            val callId = call.callLog?.callId?.hashCode()?.toUInt()?.toString(16) ?: "pending"
+            val result = if (code > 0) "code=$code" else "no protocol code reported"
+            Diagnosis.record(kind, "call#$callId ${call.dir} $state; $result; SDK reason=${call.reason}")
             Log.d(TAG, "Call state: $state - $message")
+            if (state == Call.State.End || state == Call.State.Error) {
+                _callQuality.value?.let { q ->
+                    Diagnosis.record("Media", "call#$callId last sample: ${q.codec}; up/down ${q.upKbps}/${q.downKbps} kbps; loss ${q.lossPercent}%; jitter ${q.jitterMs} ms; RTT ${q.rttMs} ms")
+                }
+            }
             val remoteAddress = call.remoteAddress.asStringUriOnly()
 
             when (state) {
@@ -570,15 +1031,29 @@ class SipEngine(private val context: Context) {
                         forwardSipCall(call, fwNum)
                         return
                     }
+                    resetInviteTracking()
+                    onInviteArrived() // প্রথম INVITE এইমাত্র এসেছে
+                    _callAccountUser.value = labelForCall(call)
+                    _callState.value = SipCallState.Incoming(remoteAddress, call)
+                    stopAutoAnswerAudio()
+                    val micEnabled = AutoAnswerPrefs.microphoneEnabled(context)
+                    if (AutoAnswerPrefs.shouldAnswerNow(context) &&
+                        (micEnabled || AutoAnswerPrefs.audioPath(context) != null)
+                    ) {
+                        pendingAutoAnswerAudioRemote = remoteAddress
+                        // Use the same answer path as the in-call controls so audio and foreground service setup match.
+                        mainHandler.post {
+                            val stillIncoming = call.state == Call.State.IncomingReceived ||
+                                call.state == Call.State.IncomingEarlyMedia
+                            if (stillIncoming) answerCall(call, muteMicrophone = !micEnabled)
+                        }
+                        return
+                    }
                     activeRecordingPath = prepareRecordingPath(remoteAddress)
                     try {
                         call.notifyRinging()
                     } catch (_: Exception) {
                     }
-                    resetInviteTracking()
-                    onInviteArrived() // প্রথম INVITE এইমাত্র এসেছে
-                    _callAccountUser.value = labelForCall(call)
-                    _callState.value = SipCallState.Incoming(remoteAddress, call)
                     CallRinger.start(context)
                     TelecomHelper.reportIncomingCall(context, remoteAddress)
                     mainHandler.removeCallbacks(ringingWatchdog)
@@ -602,6 +1077,7 @@ class SipEngine(private val context: Context) {
                     mainHandler.removeCallbacks(ringingWatchdog)
                     activeCallConnected = false
                     activeCallRecorded = false
+                    _callMediaReady.value = false
                     CallRinger.stop()
                     CallNetworkLock.acquire(context)
                     SipForegroundService.setCallActive(context, true)
@@ -615,6 +1091,10 @@ class SipEngine(private val context: Context) {
                 }
                 Call.State.Connected, Call.State.StreamsRunning -> {
                     mainHandler.removeCallbacks(ringingWatchdog)
+                    if (state == Call.State.StreamsRunning) {
+                        _callMediaReady.value = true
+                        mainHandler.post { startAutoAnswerAudio(call, remoteAddress) }
+                    }
                     applyAudioRoute()
                     // ব্লুটুথ লাইন (SCO) তৈরি হতে সময় লাগে; আউটগোয়িং কলে প্রথমবারের সেট কাজ করে না, তাই একটু পরে আবার সেট
                     mainHandler.postDelayed({ if (core.currentCall != null) forceBluetoothSwitch() }, 400)
@@ -632,7 +1112,8 @@ class SipEngine(private val context: Context) {
                     NotificationHelper.cancelIncomingCallNotification(context)
                     NativeDialerOverlay.dismissIncomingIfVisible()
                     try {
-                        core.isMicEnabled = !_isMuted.value
+                        core.isMicEnabled = !(_isMuted.value || autoCallMicLocked)
+                        if (autoCallMicLocked) _isMuted.value = true
                         if (TelecomHelper.isAutoRecordEnabled(context)) {
                             if (activeRecordingPath.isEmpty()) {
                                 activeRecordingPath = prepareRecordingPath(remoteAddress)
@@ -655,12 +1136,17 @@ class SipEngine(private val context: Context) {
                     _callState.value = SipCallState.Connected(remoteAddress, call)
                 }
                 Call.State.Paused, Call.State.PausedByRemote -> {
+                    _callMediaReady.value = false
                     _callState.value = SipCallState.OnHold(remoteAddress, call)
                 }
                 Call.State.End, Call.State.Error, Call.State.Released -> {
+                    _callMediaReady.value = false
                     mainHandler.removeCallbacks(ringingWatchdog)
+                    val callQualityForRecord = _callQuality.value
                     stopQualityPolling()
                     resetInviteTracking()
+                    stopAutoAnswerAudio()
+                    stopAutoCallAudio()
                     if (core.callsNb <= 1) {
                         CallNetworkLock.release()
                         SipForegroundService.setCallActive(context, false)
@@ -722,7 +1208,12 @@ class SipEngine(private val context: Context) {
                                         isAnswered = wasAnswered,
                                         duration = if (wasAnswered) durationSec else 0,
                                         recordingPath = validRecPath,
-                                        accountUser = accountUserForRecord
+                                        accountUser = accountUserForRecord,
+                                        codec = callQualityForRecord?.codec.orEmpty(),
+                                        qualityRating = callQualityForRecord?.rating ?: -1f,
+                                        jitterMs = callQualityForRecord?.jitterMs ?: 0,
+                                        lossPercent = callQualityForRecord?.lossPercent ?: 0f,
+                                        rttMs = callQualityForRecord?.rttMs ?: 0
                                     )
                                 )
                             } catch (e: Exception) {
@@ -733,18 +1224,57 @@ class SipEngine(private val context: Context) {
                     // কল কেন ব্যর্থ হলো (সার্ভারের কোড, যেমন 403/404/503) জানাতে
                     val failure = try {
                         val ei = call.errorInfo
+                        val callReason = call.reason
                         if (state == Call.State.Error || (ei != null && ei.protocolCode >= 300)) {
                             val code = ei?.protocolCode ?: 0
                             val phrase = ei?.phrase.orEmpty().ifBlank { call.reason.toString() }
-                            if (code > 0) "Call failed: $code $phrase" else "Call failed: ${message.ifBlank { phrase }}"
+                            if (isCellularTransportFailure(ei, callReason, message)) {
+                                val outgoing = call.dir == Call.Dir.Outgoing
+                                val accountId = currentAccount?.id
+                                val activeTransport = accountId?.let { registeredData[it]?.transport }.orEmpty()
+                                if (outgoing && cellularNetwork && activeTransport.isNotBlank()) {
+                                    val switched = accountId?.let {
+                                        switchCellularTransportAfterFailure(it, "outgoing call: $message")
+                                    } == true
+                                    if (switched) {
+                                        "Call failed: no SIP response over mobile data; checking the alternate transport."
+                                    } else {
+                                        "Call failed: mobile SIP signaling did not respond; registration retrying."
+                                    }
+                                } else {
+                                    "Call failed: SIP signaling connection dropped (I/O error). Reconnecting."
+                                }
+                            } else if (code > 0) {
+                                "Call failed: $code $phrase"
+                            } else {
+                                "Call failed: ${message.ifBlank { phrase }}"
+                            }
                         } else null
                     } catch (_: Exception) {
                         null
                     }
-                    _callState.value = SipCallState.Ended(remoteAddress, failure ?: message)
-                    _isMuted.value = false
+                    val endedDuration = try { call.duration.coerceAtLeast(0) } catch (_: Exception) { 0 }
+                    val endedAnswered = activeCallConnected || endedDuration > 0
+                    val endedCode = try { call.errorInfo?.protocolCode ?: 0 } catch (_: Exception) { 0 }
+                    val endedTerminationReason = try { call.reason.toString() } catch (_: Exception) { "" }
+                    _callState.value = SipCallState.Ended(
+                        remoteAddress = remoteAddress,
+                        reason = failure ?: message,
+                        durationSeconds = endedDuration,
+                        answered = endedAnswered,
+                        protocolCode = endedCode,
+                        terminationReason = endedTerminationReason
+                    )
+                    _isMuted.value = autoCallMicLocked
                     _isSpeaker.value = false
                     speakerWanted = false
+                    if (pendingNetworkRecovery) {
+                        mainHandler.postDelayed({
+                            if (networkAvailable && core.callsNb == 0 && pendingNetworkRecovery) {
+                                scheduleNetworkRecovery()
+                            }
+                        }, 350L)
+                    }
                 }
                 else -> {}
             }
@@ -794,10 +1324,18 @@ class SipEngine(private val context: Context) {
      * select = true হলে এটি নির্বাচিত (আউটগোয়িং কলের) অ্যাকাউন্ট হয়।
      */
     fun register(account: SipAccountData, select: Boolean = true) {
+        configuredAccounts[account.id] = account
+        val effective = account.copy(transport = preferredTransport(account, useBackup = false))
+        registerOnEndpoint(effective, select, useBackup = false)
+    }
+
+    private fun registerOnEndpoint(account: SipAccountData, select: Boolean, useBackup: Boolean) {
         val id = account.id
-        if (select) currentAccount = account
+        if (useBackup && account.backupServer.isBlank()) return
+        if (select) currentAccount = configuredAccounts[id] ?: account
         val st = _accountStates.value[id]
-        if (registeredData[id] == account &&
+        if (mobileProfile[id] == cellularNetwork && registeredData[id] == account &&
+            ((id in backupActive) == useBackup) &&
             (st == SipRegistrationState.REGISTERED || st == SipRegistrationState.REGISTERING)
         ) {
             Log.d(TAG, "Account $id already registering/registered, skipping")
@@ -808,7 +1346,12 @@ class SipEngine(private val context: Context) {
             return
         }
 
+        if (useBackup) backupActive.add(id) else backupActive.remove(id)
+        primaryProbeTasks.remove(id)?.let { mainHandler.removeCallbacks(it) }
+
         // শুধু এই অ্যাকাউন্টের আগের অবস্থা সাফ
+        registrationRetries.remove(id)?.let { mainHandler.removeCallbacks(it) }
+        registrationRetryAttempts.remove(id)
         regTimeouts.remove(id)?.let { mainHandler.removeCallbacks(it) }
         failureCounts[id] = 0
         authChallenges[id] = 0
@@ -841,7 +1384,7 @@ class SipEngine(private val context: Context) {
             core.incTimeout = 35
 
             try {
-                core.config.setInt("sip", "keepalive_period", 15000)
+                core.config.setInt("sip", "keepalive_period", if (cellularNetwork) 15000 else 10000)
                 core.config.setInt("sip", "use_rport", 1)
                 core.config.setInt("sip", "contact_autorewrite", 1)
                 core.config.setInt("sip", "guess_hostname", 1)
@@ -861,11 +1404,10 @@ class SipEngine(private val context: Context) {
 
             val cleanUsername = cleanUser(account)
             val (cleanDomain, extractedDomainPort) = parseHostAndPort(account.domain, account.port)
-            val (cleanServerHost, effectivePort) = if (account.proxy.isNotBlank()) {
-                parseHostAndPort(account.proxy, extractedDomainPort)
-            } else {
-                cleanDomain to extractedDomainPort
-            }
+            val usingBackup = id in backupActive
+            val serverInput = if (usingBackup) account.backupServer else account.proxy.ifBlank { account.domain }
+            val serverDefaultPort = if (usingBackup) account.backupPort else extractedDomainPort
+            val (cleanServerHost, effectivePort) = parseHostAndPort(serverInput, serverDefaultPort)
 
             if (cleanUsername.isEmpty() || cleanDomain.isEmpty()) {
                 setAccState(id, SipRegistrationState.ERROR, error = "Please enter a valid username and domain.")
@@ -895,7 +1437,8 @@ class SipEngine(private val context: Context) {
             core.addAuthInfo(wildcardAuth)
             authInfos[id] = mutableListOf(domainAuth, wildcardAuth)
 
-            val transportType = when (account.transport.uppercase()) {
+            val selectedTransport = if (usingBackup) account.backupTransport else account.transport
+            val transportType = when (selectedTransport.uppercase()) {
                 "TCP" -> TransportType.Tcp
                 "TLS" -> TransportType.Tls
                 else -> TransportType.Udp
@@ -931,27 +1474,32 @@ class SipEngine(private val context: Context) {
             accountParams.setRoutesAddresses(arrayOf(serverAddr))
 
             val natPolicy = core.createNatPolicy().apply {
-                isStunEnabled = false
-                isIceEnabled = false
+                // STUN discovers a server-reflexive media candidate; ICE uses it during SDP
+                // negotiation. SIP signaling still requires a reachable PBX transport.
+                if (!cellularNetwork) stunServer = "stun.l.google.com:19302"
+                isStunEnabled = !cellularNetwork
+                isIceEnabled = !cellularNetwork
                 isTurnEnabled = false
                 isUpnpEnabled = false
             }
             accountParams.natPolicy = natPolicy
 
             val linphoneAccount = core.createAccount(accountParams)
+            mobileProfile[id] = cellularNetwork
+            Diagnosis.record("Route", "SIP $selectedTransport/$effectivePort; ICE and STUN " + if (cellularNetwork) "off (Beta mobile profile)" else "on")
             registeredData[id] = account
+            SipConnectionDiagnostics.endpoint(context, id, cleanServerHost, effectivePort, selectedTransport, usingBackup)
+            SipConnectionDiagnostics.attempted(context, id)
             core.addAccount(linphoneAccount)
             if (select || core.defaultAccount == null) {
                 core.defaultAccount = linphoneAccount
             }
 
             setAccState(id, SipRegistrationState.REGISTERING)
-            val timeout = makeRegistrationTimeout(id)
-            regTimeouts[id] = timeout
-            mainHandler.postDelayed(timeout, REGISTRATION_TIMEOUT_MS)
+            armRegistrationTimeout(id)
             Log.i(
                 TAG,
-                "SIP registration started: id=$id user=$cleanUsername, domain=$cleanDomain, server=$cleanServerHost:$effectivePort, transport=$transportType"
+                "SIP registration started: id=$id user=$cleanUsername, domain=$cleanDomain, server=$cleanServerHost:$effectivePort, transport=$transportType, backup=$usingBackup"
             )
 
         } catch (e: Exception) {
@@ -962,11 +1510,19 @@ class SipEngine(private val context: Context) {
 
     /** শুধু একটি অ্যাকাউন্ট আনরেজিস্টার করে; বাকিগুলো চালু থাকে */
     fun unregisterAccount(id: String) {
+        primaryProbeTasks.remove(id)?.let { mainHandler.removeCallbacks(it) }
+        backupActive.remove(id)
+        if (cellularUdpFallback.remove(id)) saveCellularTransportFallbacks()
+        synchronized(cellularTransportSwitchPending) { cellularTransportSwitchPending.remove(id) }
+        synchronized(cellularTransportSwitchCount) { cellularTransportSwitchCount.remove(id) }
+        registrationRetries.remove(id)?.let { mainHandler.removeCallbacks(it) }
+        registrationRetryAttempts.remove(id)
         regTimeouts.remove(id)?.let { mainHandler.removeCallbacks(it) }
         failureCounts.remove(id)
         authChallenges.remove(id)
         stoppedByError.remove(id)
         registeredData.remove(id)
+        configuredAccounts.remove(id)
         removeLinphoneAccount(id)
         _accountStates.value = _accountStates.value - id
         _accountErrors.value = _accountErrors.value - id
@@ -997,7 +1553,13 @@ class SipEngine(private val context: Context) {
     /**
      * SIP কল করুন
      */
+    private fun rejectLocalCall(detail: String): Boolean {
+        Diagnosis.record("Call error", "Outgoing: $detail")
+        return false
+    }
+
     fun makeCall(rawTarget: String): Boolean {
+        Diagnosis.record("Call", "Outgoing dial requested")
         return try {
             val selectedLinphoneAccount = currentAccount?.let { core.getAccountByIdkey(it.id) }
             val decoded = Uri.decode(rawTarget)
@@ -1007,20 +1569,19 @@ class SipEngine(private val context: Context) {
                 .replace("-", "")
                 .trim()
 
-            if (decoded.isEmpty()) return false
+            if (decoded.isEmpty()) return rejectLocalCall("Empty destination")
 
             val address = if (decoded.contains("@")) {
                 "sip:$decoded"
             } else {
                 val domain = selectedLinphoneAccount?.params?.identityAddress?.domain
                 if (domain.isNullOrEmpty()) {
-                    Log.e(TAG, "Cannot make call: selected SIP account is not registered")
-                    return false
+                    return rejectLocalCall("Selected account has no SIP domain")
                 }
                 "sip:$decoded@$domain"
             }
 
-            val addr = Factory.instance().createAddress(address) ?: return false
+            val addr = Factory.instance().createAddress(address) ?: return rejectLocalCall("Invalid SIP address")
             val params = core.createCallParams(null)
             params?.mediaEncryption = MediaEncryption.None
             // আউটগোয়িং কল সবসময় নির্বাচিত অ্যাকাউন্ট দিয়ে
@@ -1032,19 +1593,78 @@ class SipEngine(private val context: Context) {
                 params?.recordFile = activeRecordingPath
             }
 
+            _callMediaReady.value = false
+            _callState.value = SipCallState.Idle
             val call = core.inviteAddressWithParams(addr, params!!)
-            Log.i(TAG, "Calling remote party")
-            call != null
+            if (call == null) return rejectLocalCall("SDK declined to create call")
+            true
         } catch (e: Exception) {
             Log.e(TAG, "Make call failed", e)
+            rejectLocalCall(e.javaClass.simpleName)
+        }
+    }
+
+    /** Lock the handset microphone off for the duration of an automated SIP audio call. */
+    fun setAutoCallMicLocked(locked: Boolean, restoreMuted: Boolean = _isMuted.value) {
+        val apply = {
+            autoCallMicLocked = locked
+            val muted = if (locked) true else restoreMuted
+            _isMuted.value = muted
+            try { core.isMicEnabled = !muted } catch (_: Exception) {}
+        }
+        if (Looper.myLooper() == Looper.getMainLooper()) apply() else mainHandler.post { apply() }
+    }
+
+    fun hasActiveCall(): Boolean = try { core.callsNb > 0 } catch (_: Exception) { false }
+
+    /** Ends only an outgoing call while Auto Call owns the microphone lock. */
+    fun endAutoCall() {
+        if (!autoCallMicLocked) return
+        try {
+            val call = core.currentCall ?: return
+            if (call.dir == Call.Dir.Outgoing) call.terminate()
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not end the active Auto Call: ${e.message}")
+        }
+    }
+
+    /** Play imported audio into the active SIP call's outgoing media stream. */
+    fun startAutoCallAudio(path: String): Boolean {
+        return try {
+            val call = core.currentCall ?: return false
+            if (call.state != Call.State.StreamsRunning || !File(path).isFile) return false
+            autoCallMicLocked = true
+            _isMuted.value = true
+            core.isMicEnabled = false
+            stopAutoCallAudio()
+            val player = call.player
+            if (player.open(path) < 0) {
+                try { player.close() } catch (_: Exception) {}
+                return false
+            }
+            if (player.start() < 0) {
+                try { player.close() } catch (_: Exception) {}
+                return false
+            }
+            activeAutoCallAudioPlayer = player
+            true
+        } catch (e: Exception) {
+            Log.w(TAG, "Auto-call audio playback failed: ${e.message}")
             false
         }
+    }
+
+    fun stopAutoCallAudio() {
+        try { activeAutoCallAudioPlayer?.close() } catch (_: Exception) {}
+        activeAutoCallAudioPlayer = null
     }
 
     /**
      * Answer incoming SIP call
      */
-    fun answerCall() {
+    fun answerCall() = answerCall(core.currentCall ?: core.calls.firstOrNull())
+
+    private fun answerCall(targetCall: Call?, muteMicrophone: Boolean = false) {
         // মাইক্রোফোন-টাইপ ফোরগ্রাউন্ড সার্ভিস আগে চালু করি, নইলে ব্যাকগ্রাউন্ডে অপরপ্রান্ত আমাদের কথা শোনে না
         SipForegroundService.setCallActive(context, true)
         mainHandler.removeCallbacks(ringingWatchdog)
@@ -1056,8 +1676,8 @@ class SipEngine(private val context: Context) {
         NotificationHelper.cancelIncomingCallNotification(context)
         NativeDialerOverlay.dismiss()
         try {
-            val targetCall = core.currentCall ?: core.calls.firstOrNull()
             targetCall?.let { call ->
+                if (muteMicrophone) call.setMicrophoneMuted(true)
                 val remoteAddr = call.remoteAddress.asStringUriOnly()
                 val params = core.createCallParams(call)
                 params?.isAudioEnabled = true
@@ -1157,8 +1777,9 @@ class SipEngine(private val context: Context) {
      * মিউট সেট বা টগল
      */
     fun setMute(muted: Boolean) {
-        core.isMicEnabled = !muted
-        _isMuted.value = muted
+        val effectiveMuted = muted || autoCallMicLocked
+        core.isMicEnabled = !effectiveMuted
+        _isMuted.value = effectiveMuted
     }
 
     fun toggleMute() {

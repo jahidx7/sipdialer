@@ -7,6 +7,7 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
 
     <!-- Audio -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
@@ -157,6 +158,14 @@
             android:name=".service.KeepAliveReceiver"
             android:exported="false" />
 
+        <activity
+            android:name=".RanksIttDialerActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:taskAffinity="${applicationId}.webdialer"
+            android:enableOnBackInvokedCallback="false"
+            android:launchMode="singleTask"
+            android:windowSoftInputMode="adjustResize" />
     </application>
 
 </manifest>

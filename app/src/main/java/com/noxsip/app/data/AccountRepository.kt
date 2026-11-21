@@ -43,6 +43,14 @@ class AccountRepository(private val context: Context) {
                 val arr = JSONArray(json)
                 (0 until arr.length()).map { i ->
                     val o = arr.getJSONObject(i)
+                    val sipTransport = o.optString("transport", "UDP")
+                    val savedCellularTransport = o.optString("cellularTransport", sipTransport)
+                    // Older Lite builds defaulted mobile data to TCP even when Beta used UDP.
+                    // Migrate that automatic default to the account's known-working SIP transport.
+                    val cellularTransport = if (
+                        sipTransport.equals("UDP", ignoreCase = true) &&
+                        savedCellularTransport.equals("TCP", ignoreCase = true)
+                    ) "UDP" else savedCellularTransport
                     SipAccountData(
                         id = o.optString("id"),
                         name = o.optString("name"),
@@ -50,11 +58,15 @@ class AccountRepository(private val context: Context) {
                         password = SecureCrypto.decrypt(o.optString("password")),
                         domain = o.optString("domain"),
                         port = o.optInt("port", 5060),
-                        transport = o.optString("transport", "UDP"),
+                        transport = sipTransport,
                         proxy = o.optString("proxy"),
                         displayName = o.optString("displayName"),
                         autoStart = o.optBoolean("autoStart", false),
-                        enabled = o.optBoolean("enabled", true)
+                        enabled = o.optBoolean("enabled", true),
+                        backupServer = o.optString("backupServer"),
+                        backupPort = o.optInt("backupPort", 5060),
+                        backupTransport = o.optString("backupTransport", "UDP"),
+                        cellularTransport = cellularTransport
                     )
                 }
             } catch (_: Exception) {
@@ -97,6 +109,10 @@ class AccountRepository(private val context: Context) {
                     .put("displayName", a.displayName)
                     .put("autoStart", a.autoStart)
                     .put("enabled", a.enabled)
+                    .put("backupServer", a.backupServer)
+                    .put("backupPort", a.backupPort)
+                    .put("backupTransport", a.backupTransport)
+                    .put("cellularTransport", a.cellularTransport)
             )
         }
         return arr.toString()

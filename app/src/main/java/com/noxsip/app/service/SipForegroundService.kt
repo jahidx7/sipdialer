@@ -7,7 +7,9 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.os.PowerManager
 import android.net.ConnectivityManager
 import android.net.Network
@@ -18,6 +20,7 @@ import com.noxsip.app.MainActivity
 import com.noxsip.app.R
 import com.noxsip.app.data.AccountRepository
 import com.noxsip.app.sip.SipEngine
+import com.noxsip.app.ptt.PttLanEngine
 import com.noxsip.app.sip.SipRegistrationState
 import com.noxsip.app.telecom.TelecomHelper
 import com.noxsip.app.util.CallNetworkLock
@@ -36,6 +39,7 @@ class SipForegroundService : Service() {
     companion object {
         private const val TAG = "SipForegroundService"
         private const val NOTIFICATION_ID = 1001
+        private const val NO_DEFAULT_NETWORK_GRACE_MS = 1_200L
 
         const val ACTION_START = "com.noxsip.app.action.START"
         const val ACTION_STOP = "com.noxsip.app.action.STOP"
@@ -107,6 +111,7 @@ class SipForegroundService : Service() {
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private lateinit var sipEngine: SipEngine
+    private val pttLanEngine by lazy { PttLanEngine.getInstance(applicationContext) }
     private var cpuWakeLock: PowerManager.WakeLock? = null
 
     /**
@@ -155,6 +160,7 @@ class SipForegroundService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        com.noxsip.app.util.Diagnosis.record("Service", "Started")
         isRunning = true
         sipEngine = SipEngine.getInstance(applicationContext)
 
@@ -169,7 +175,11 @@ class SipForegroundService : Service() {
 
     private var netCallback: ConnectivityManager.NetworkCallback? = null
     private var lastNetwork: Network? = null
+    private var lastIsCellular: Boolean? = null
     private var networkLost = false
+    private var routeChangeAwaitingCapabilities = false
+    private val networkHandler = Handler(Looper.getMainLooper())
+    private var noNetworkCheck: Runnable? = null
 
     /** Wi-Fi ↔ মোবাইল ডেটা বদলালে বা নেটওয়ার্ক ফিরলে দ্রুত রি-রেজিস্টার */
     private fun registerNetworkWatch() {
@@ -177,20 +187,85 @@ class SipForegroundService : Service() {
             val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
             val cb = object : ConnectivityManager.NetworkCallback() {
                 override fun onAvailable(network: Network) {
+                    // Android reports the already-active default network when a callback is first
+                    // registered. That initial notification is not a handover and must not reset SIP.
                     val changed = lastNetwork != null && lastNetwork != network
-                    if (changed || networkLost) {
-                        Log.i(TAG, "Network changed/restored, refreshing registration")
-                        sipEngine.keepAliveTick()
+                    val restored = networkLost
+                    noNetworkCheck?.let(networkHandler::removeCallbacks)
+                    noNetworkCheck = null
+                    if (changed || restored) {
+                        routeChangeAwaitingCapabilities = true
+                        Log.i(TAG, "Default network changed/restored; waiting for its transport before SIP recovery")
                     }
                     lastNetwork = network
                     networkLost = false
                 }
 
+                override fun onCapabilitiesChanged(
+                    network: Network,
+                    networkCapabilities: android.net.NetworkCapabilities
+                ) {
+                    // Android calls this after onAvailable(). Learn the initial network type without
+                    // treating startup as a handover; recover only after a real route/type change.
+                    if (network == lastNetwork &&
+                        networkCapabilities.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                    ) {
+                        val isCellular = networkCapabilities.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR)
+                        val previousType = lastIsCellular
+                        val routeChanged = routeChangeAwaitingCapabilities
+                        lastIsCellular = isCellular
+                        routeChangeAwaitingCapabilities = false
+                        if (routeChanged || (previousType != null && previousType != isCellular)) {
+                            Log.i(TAG, "Default network transport changed: ${if (isCellular) "mobile data" else "Wi-Fi/other"}")
+                            sipEngine.onNetworkChanged(isCellular)
+                            pttLanEngine.onNetworkChanged()
+                        } else if (previousType == null) {
+                            sipEngine.onInitialNetwork(isCellular)
+                            pttLanEngine.onNetworkChanged()
+                        } else {
+                            Log.d(TAG, "Current default network has INTERNET capability: $network")
+                        }
+                    }
+                }
+
                 override fun onLost(network: Network) {
-                    if (lastNetwork == network) networkLost = true
+                    if (lastNetwork == network) {
+                        networkLost = true
+                        lastNetwork = null
+                        Log.i(TAG, "Default route lost; allowing a short handover window before pausing SIP")
+                        val check = Runnable {
+                            noNetworkCheck = null
+                            if (lastNetwork != null || !networkLost) return@Runnable
+
+                            // Some Android builds deliver onLost during a handover even though
+                            // the replacement route is already active. Recheck outside the
+                            // callback to avoid blocking Android's connectivity callback thread.
+                            val current = cm.activeNetwork
+                            val capabilities = current?.let(cm::getNetworkCapabilities)
+                            if (current != null && capabilities?.hasCapability(
+                                    android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET
+                                ) == true
+                            ) {
+                                lastNetwork = current
+                                networkLost = false
+                                lastIsCellular = capabilities.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR)
+                                routeChangeAwaitingCapabilities = false
+                                Log.i(TAG, "Found active default route after handover; restarting SIP")
+                                sipEngine.onNetworkChanged(lastIsCellular)
+                            } else {
+                                lastIsCellular = null
+                                routeChangeAwaitingCapabilities = false
+                                Log.i(TAG, "No replacement internet route; pausing SIP until connectivity returns")
+                                sipEngine.onNetworkUnavailable()
+                                pttLanEngine.onNetworkChanged()
+                            }
+                        }
+                        noNetworkCheck = check
+                        networkHandler.postDelayed(check, NO_DEFAULT_NETWORK_GRACE_MS)
+                    }
                 }
             }
-            cm.registerDefaultNetworkCallback(cb)
+            cm.registerDefaultNetworkCallback(cb, networkHandler)
             netCallback = cb
         } catch (e: Exception) {
             Log.w(TAG, "network watch failed: ${e.message}")
@@ -198,6 +273,8 @@ class SipForegroundService : Service() {
     }
 
     private fun unregisterNetworkWatch() {
+        noNetworkCheck?.let(networkHandler::removeCallbacks)
+        noNetworkCheck = null
         try {
             netCallback?.let {
                 (getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager).unregisterNetworkCallback(it)
@@ -222,6 +299,7 @@ class SipForegroundService : Service() {
                 KeepAliveState.setStoppedByUser(this, false)
                 startForegroundSafely()
                 acquireStandbyLocks()
+                pttLanEngine.setBackgroundListening(true)
                 registerSipAccount()
             }
             ACTION_CALL_ACTIVE -> {
@@ -240,6 +318,7 @@ class SipForegroundService : Service() {
             }
             ACTION_STOP -> {
                 KeepAliveState.setStoppedByUser(this, true)
+                pttLanEngine.setBackgroundListening(false)
                 releaseStandbyLocks()
                 sipEngine.unregister()
                 stopForeground(STOP_FOREGROUND_REMOVE)
@@ -337,6 +416,8 @@ class SipForegroundService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        com.noxsip.app.util.Diagnosis.record("Service", "Stopped")
+        pttLanEngine.setBackgroundListening(false)
         unregisterNetworkWatch()
         releaseStandbyLocks()
         isRunning = false
