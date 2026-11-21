@@ -14,6 +14,7 @@ and backups are local, password-protected files.
 - **SIP calling** (Linphone SDK 5.3): UDP/TCP/TLS registration, mute, speaker, hold, DTMF, auto re-registration.
 - **Multiple SIP accounts**: add, edit, delete, enable/disable; the selected account is used for outgoing calls.
 - **Dialer integration**: default-dialer role, SIM 1 / SIM 2 / SIP chooser when dialing, SIM call screen.
+- **Local Push to Talk**: discover NoxSIP devices on the same Wi-Fi and stream live voice while the talk button is held. Receiving continues in the background while the SIP foreground service is running; sending requires the PTT screen and microphone permission. Audio is not saved and uses media volume, so it can play in silent mode. Background listening uses extra battery. Router client isolation or blocked Wi-Fi multicast can prevent discovery.
 - **Reliable incoming calls**: foreground service, wake locks, full-screen incoming call UI on the lock screen.
 - **Auto Answer**: optional setting for incoming SIP calls; disabled by default and applied after block and call-forwarding rules. A selected music/audio file is normalized to WAV and streamed to the caller after the call connects.
 - **Audio quality**: G.711 (PCMA/PCMU) by default, optional HD codecs (Opus / G.722), mic boost, DSCP marking,
@@ -64,6 +65,7 @@ are git-ignored. Never commit them.
 | Permission | Used for |
 | --- | --- |
 | `RECORD_AUDIO`, `MODIFY_AUDIO_SETTINGS` | Calls and call recording |
+| `CHANGE_WIFI_MULTICAST_STATE` | Discover NoxSIP peers and deliver live audio on the same Wi-Fi for Push to Talk |
 | `READ_PHONE_STATE`, `CALL_PHONE`, `MANAGE_OWN_CALLS`, `READ_PHONE_NUMBERS` | Telecom integration, SIM list |
 | `READ_CONTACTS`, `READ_CALL_LOG` | Contact names and showing SIM calls in the call list |
 | `SYSTEM_ALERT_WINDOW`, `USE_FULL_SCREEN_INTENT` | Incoming-call popup / lock-screen call UI |

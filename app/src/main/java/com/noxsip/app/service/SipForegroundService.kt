@@ -20,6 +20,7 @@ import com.noxsip.app.MainActivity
 import com.noxsip.app.R
 import com.noxsip.app.data.AccountRepository
 import com.noxsip.app.sip.SipEngine
+import com.noxsip.app.ptt.PttLanEngine
 import com.noxsip.app.sip.SipRegistrationState
 import com.noxsip.app.telecom.TelecomHelper
 import com.noxsip.app.util.CallNetworkLock
@@ -110,6 +111,7 @@ class SipForegroundService : Service() {
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private lateinit var sipEngine: SipEngine
+    private val pttLanEngine by lazy { PttLanEngine.getInstance(applicationContext) }
     private var cpuWakeLock: PowerManager.WakeLock? = null
 
     /**
@@ -216,8 +218,10 @@ class SipForegroundService : Service() {
                         if (routeChanged || (previousType != null && previousType != isCellular)) {
                             Log.i(TAG, "Default network transport changed: ${if (isCellular) "mobile data" else "Wi-Fi/other"}")
                             sipEngine.onNetworkChanged(isCellular)
+                            pttLanEngine.onNetworkChanged()
                         } else if (previousType == null) {
                             sipEngine.onInitialNetwork(isCellular)
+                            pttLanEngine.onNetworkChanged()
                         } else {
                             Log.d(TAG, "Current default network has INTERNET capability: $network")
                         }
@@ -253,6 +257,7 @@ class SipForegroundService : Service() {
                                 routeChangeAwaitingCapabilities = false
                                 Log.i(TAG, "No replacement internet route; pausing SIP until connectivity returns")
                                 sipEngine.onNetworkUnavailable()
+                                pttLanEngine.onNetworkChanged()
                             }
                         }
                         noNetworkCheck = check
@@ -294,6 +299,7 @@ class SipForegroundService : Service() {
                 KeepAliveState.setStoppedByUser(this, false)
                 startForegroundSafely()
                 acquireStandbyLocks()
+                pttLanEngine.setBackgroundListening(true)
                 registerSipAccount()
             }
             ACTION_CALL_ACTIVE -> {
@@ -312,6 +318,7 @@ class SipForegroundService : Service() {
             }
             ACTION_STOP -> {
                 KeepAliveState.setStoppedByUser(this, true)
+                pttLanEngine.setBackgroundListening(false)
                 releaseStandbyLocks()
                 sipEngine.unregister()
                 stopForeground(STOP_FOREGROUND_REMOVE)
@@ -410,6 +417,7 @@ class SipForegroundService : Service() {
 
     override fun onDestroy() {
         com.noxsip.app.util.Diagnosis.record("Service", "Stopped")
+        pttLanEngine.setBackgroundListening(false)
         unregisterNetworkWatch()
         releaseStandbyLocks()
         isRunning = false
