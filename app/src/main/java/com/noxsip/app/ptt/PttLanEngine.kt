@@ -11,6 +11,7 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.wifi.WifiManager
 import android.os.Build
+import android.os.PowerManager
 import android.util.Log
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -56,10 +57,14 @@ class PttLanEngine(context: Context) {
     val transmitting: StateFlow<Boolean> = _transmitting.asStateFlow()
 
     private val transmittingFlag = AtomicBoolean(false)
+    private val startingFlag = AtomicBoolean(false)
     private var socket: MulticastSocket? = null
     private var group: InetAddress? = null
     private var wifiInterface: NetworkInterface? = null
     private var multicastLock: WifiManager.MulticastLock? = null
+    private var pttWakeLock: PowerManager.WakeLock? = null
+    @Volatile private var backgroundListening = false
+    @Volatile private var screenUsers = 0
     private var receiveJob: Job? = null
     private var heartbeatJob: Job? = null
     private var captureJob: Job? = null
@@ -70,7 +75,7 @@ class PttLanEngine(context: Context) {
     @Volatile private var remoteSpeakerId: String? = null
 
     fun start() {
-        if (socket != null) return
+        if (socket != null || !startingFlag.compareAndSet(false, true)) return
         scope.launch {
             try {
                 val cm = app.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
@@ -87,6 +92,11 @@ class PttLanEngine(context: Context) {
                 wifiInterface = ni
                 val wifi = app.getSystemService(Context.WIFI_SERVICE) as WifiManager
                 multicastLock = wifi.createMulticastLock("NoxSIP:PTT").apply {
+                    setReferenceCounted(false)
+                    acquire()
+                }
+                val power = app.getSystemService(Context.POWER_SERVICE) as PowerManager
+                pttWakeLock = power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "NoxSIP:PTTReceive").apply {
                     setReferenceCounted(false)
                     acquire()
                 }
@@ -114,6 +124,35 @@ class PttLanEngine(context: Context) {
                 Log.w(TAG, "PTT start failed", e)
                 _status.value = e.message?.let { "PTT unavailable: $it" } ?: "PTT unavailable on this Wi-Fi"
                 closeNetwork()
+            } finally {
+                startingFlag.set(false)
+            }
+        }
+    }
+
+    fun acquireScreenUse() {
+        screenUsers++
+        start()
+    }
+
+    fun releaseScreenUse() {
+        screenUsers = (screenUsers - 1).coerceAtLeast(0)
+        if (screenUsers == 0 && !backgroundListening) stopNetwork()
+    }
+
+    /** Keeps the listener alive while the SIP foreground service is running, including off-screen. */
+    fun setBackgroundListening(enabled: Boolean) {
+        backgroundListening = enabled
+        if (enabled) start() else if (screenUsers == 0) stopNetwork()
+    }
+
+    /** Refresh socket binding after Android changes the default network. */
+    fun onNetworkChanged() {
+        if (backgroundListening || screenUsers > 0) {
+            stopNetwork()
+            scope.launch {
+                delay(300)
+                if (socket == null) start()
             }
         }
     }
@@ -181,6 +220,12 @@ class PttLanEngine(context: Context) {
     }
 
     fun stop() {
+        backgroundListening = false
+        screenUsers = 0
+        stopNetwork()
+    }
+
+    private fun stopNetwork() {
         val wasTalking = transmittingFlag.getAndSet(false)
         if (wasTalking) sendControl(TYPE_STOP, localName)
         captureJob?.cancel(); captureJob = null
@@ -247,10 +292,10 @@ class PttLanEngine(context: Context) {
     private fun ensureAudioTrack() {
         if (audioTrack != null) return
         try {
-            setAudioMode(true)
             val min = AudioTrack.getMinBufferSize(SAMPLE_RATE, CHANNEL_OUT, ENCODING)
             val attrs = AudioAttributes.Builder()
-                .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                // Media usage continues to play in Android silent mode; it respects media volume.
+                .setUsage(AudioAttributes.USAGE_MEDIA)
                 .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                 .build()
             val format = AudioFormat.Builder()
@@ -330,6 +375,8 @@ class PttLanEngine(context: Context) {
         socket = null; group = null; wifiInterface = null
         try { multicastLock?.release() } catch (_: Exception) { }
         multicastLock = null
+        try { pttWakeLock?.takeIf { it.isHeld }?.release() } catch (_: Exception) { }
+        pttWakeLock = null
         setAudioMode(false)
         remoteSpeakerId = null
         _transmitting.value = false
@@ -338,6 +385,11 @@ class PttLanEngine(context: Context) {
     }
 
     companion object {
+        @Volatile private var instance: PttLanEngine? = null
+        fun getInstance(context: Context): PttLanEngine = instance ?: synchronized(this) {
+            instance ?: PttLanEngine(context.applicationContext).also { instance = it }
+        }
+
         private const val TAG = "NoxSIP-PTT"
         private const val PORT = 45777
         private const val GROUP = "239.255.77.77"
