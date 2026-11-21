@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build-lite:
@@ -104,24 +104,3 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      - name: Publish downloadable APK and source ZIP
-        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          APP_VERSION: ${{ steps.package.outputs.app_version }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          tag="lite-v${APP_VERSION}"
-          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "Release $tag already exists. Increment the Lite versionCode and versionName before publishing another build." >&2
-            exit 1
-          fi
-          gh release create "$tag" \
-            "dist/NoxSIP-Lite-${APP_VERSION}.apk" \
-            "dist/NoxSIP-Lite-Source-${APP_VERSION}.zip" \
-            "dist/SHA256SUMS.txt" \
-            --repo "$GITHUB_REPOSITORY" \
-            --target "$GITHUB_SHA" \
-            --title "NoxSIP Lite ${APP_VERSION}" \
-            --notes "Lite 1.3.1 simplifies per-contact call logs, labels SIP calls by account and imported cellular calls by SIM slot when Android provides it. Mobile registration still requires a SIP endpoint and transport reachable on the carrier network; Diagnosis records unanswered registration attempts for provider-side tracing."

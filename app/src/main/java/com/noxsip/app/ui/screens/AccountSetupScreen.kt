@@ -232,7 +232,7 @@ fun AccountSetupScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .then(if (settingsTab == 8) Modifier else Modifier.verticalScroll(rememberScrollState()))
+            .then(if (settingsTab == 8 || settingsTab == 11) Modifier else Modifier.verticalScroll(rememberScrollState()))
             .padding(horizontal = pageInset, vertical = 6.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
@@ -240,37 +240,52 @@ fun AccountSetupScreen(
         androidx.activity.compose.BackHandler(enabled = settingsTab != -1) { settingsTab = -1 }
         if (settingsTab == -1) {
             val backupSubtitle = "Back up accounts, calls & contacts to a file"
-            SettingsRow(Icons.Filled.Dns, "SIP Account", "SIP account related settings", MaterialTheme.colorScheme.primary) { settingsTab = 0 }
-            SettingsRow(Icons.Filled.GraphicEq, "Audio & Codec", "Audio & codec related settings", MaterialTheme.colorScheme.tertiary) { settingsTab = 1 }
+            Card(shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Box(Modifier.size(48.dp).clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.primary.copy(alpha = .14f)), contentAlignment = Alignment.Center) {
+                        Icon(Icons.Filled.Settings, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(25.dp))
+                    }
+                    Column(Modifier.weight(1f)) {
+                        Text("Settings", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                        Text("Manage calling, connectivity and app preferences", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+            SettingsSectionLabel("Accounts & calling")
+            SettingsRow(Icons.Filled.Dns, "SIP Account", "Manage your SIP accounts", MaterialTheme.colorScheme.primary) { settingsTab = 0 }
+            SettingsRow(Icons.Filled.GraphicEq, "Audio & Codec", "Audio devices and supported codecs", MaterialTheme.colorScheme.tertiary) { settingsTab = 1 }
+            SettingsRow(Icons.Filled.MusicNote, "Auto Answer", "Audio file, schedule and microphone", MaterialTheme.colorScheme.tertiary) { settingsTab = 10 }
+            SettingsRow(Icons.AutoMirrored.Filled.PhoneForwarded, "Auto Call", "Import a list and play a recorded SIP message", MaterialTheme.colorScheme.primary) { settingsTab = 8 }
+            SettingsRow(Icons.Filled.PhoneInTalk, "Dialer & Permission", "Phone dialer integration", MaterialTheme.colorScheme.secondary) { settingsTab = 2 }
             // কল সেটিং: অটো রেকর্ড অন/অফ সুইচ (সরাসরি প্রধান তালিকায়)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(RoundedCornerShape(18.dp))
                     .background(MaterialTheme.colorScheme.surfaceContainerLow)
-                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f), RoundedCornerShape(12.dp))
+                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f), RoundedCornerShape(18.dp))
                     .clickable {
                         autoRecordCalls = !autoRecordCalls
                         TelecomHelper.setAutoRecordEnabled(context, autoRecordCalls)
                     }
-                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 androidx.compose.foundation.layout.Box(
                     modifier = Modifier
-                        .size(32.dp)
-                        .clip(androidx.compose.foundation.shape.CircleShape)
+                        .size(40.dp)
+                        .clip(RoundedCornerShape(14.dp))
                         .background(Color(0xFFDC2626).copy(alpha = 0.14f)),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(Icons.Filled.FiberManualRecord, contentDescription = null, tint = Color(0xFFDC2626), modifier = Modifier.size(18.dp))
                 }
-                Spacer(modifier = Modifier.width(8.dp))
+                Spacer(modifier = Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("Auto Call Recording", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
+                    Text("Auto Call Recording", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
                     Text(
                         if (autoRecordCalls) "On: every call is recorded" else "Off: calls are not recorded",
-                        fontSize = 11.sp,
+                        fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
@@ -282,16 +297,15 @@ fun AccountSetupScreen(
                     }
                 )
             }
-            SettingsRow(Icons.Filled.MusicNote, "Auto Answer", "Audio file, schedule and microphone", MaterialTheme.colorScheme.tertiary) { settingsTab = 10 }
-            SettingsRow(Icons.AutoMirrored.Filled.PhoneForwarded, "Auto Call", "Import a list and play a recorded SIP message", MaterialTheme.colorScheme.primary) { settingsTab = 8 }
-            SettingsRow(Icons.Filled.PhoneInTalk, "Dialer & Permission", "Phone dialer integration", MaterialTheme.colorScheme.secondary) { settingsTab = 2 }
+            SettingsSectionLabel("Network & reliability")
             SettingsRow(Icons.Filled.BatteryChargingFull, "Power Mode", "Battery mode", MaterialTheme.colorScheme.tertiary) { settingsTab = 4 }
             SettingsRow(Icons.Filled.MonitorHeart, "Connection Health", "SIP status, retries and failover", MaterialTheme.colorScheme.primary) { settingsTab = 7 }
+            SettingsRow(Icons.Filled.MonitorHeart, "Diagnosis", "Network events and SIP call troubleshooting", MaterialTheme.colorScheme.primary) { settingsTab = 11 }
+            SettingsSectionLabel("Privacy & app")
             SettingsRow(Icons.Filled.Block, "Blocked numbers", "Calls from these numbers are rejected", MaterialTheme.colorScheme.error) { settingsTab = 5 }
             SettingsRow(Icons.Filled.ManageAccounts, "User Account", backupSubtitle, MaterialTheme.colorScheme.tertiary) { settingsTab = 3 }
             SettingsRow(Icons.Filled.SystemUpdate, "App Update", "Check for a new version", MaterialTheme.colorScheme.secondary) { settingsTab = 6 }
             SettingsRow(Icons.Filled.Palette, "Appearance", "System, light, or dark theme", MaterialTheme.colorScheme.tertiary) { settingsTab = 9 }
-            SettingsRow(Icons.Filled.MonitorHeart, "Diagnosis", "Call summary and network history", MaterialTheme.colorScheme.primary) { settingsTab = 11 }
             // নিচের ঐচ্ছিক ফ্লোটিং উইজেট (SupportSlot) যেন শেষ সারির উপর না পড়ে
             Spacer(modifier = Modifier.height(72.dp))
         } else {
@@ -991,7 +1005,7 @@ fun AccountSetupScreen(
                 modifier = Modifier.padding(8.dp)
             )
         }
-        if (settingsTab == 11) DiagnosisPanel()
+        if (settingsTab == 11) DiagnosisPanel(Modifier.weight(1f))
         if (settingsTab == 7) {
             ConnectionHealthCard(
                 currentAccount = currentAccount,
@@ -1589,18 +1603,18 @@ private fun SettingsRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(18.dp))
             .background(MaterialTheme.colorScheme.surfaceContainerLow)
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f), RoundedCornerShape(12.dp))
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f), RoundedCornerShape(18.dp))
             .clickable(onClick = onClick)
-            .padding(horizontal = 10.dp, vertical = 8.dp),
+            .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         // রঙিন গোল ব্যাকগ্রাউন্ডে আইকন
         androidx.compose.foundation.layout.Box(
             modifier = Modifier
-                .size(32.dp)
-                .clip(androidx.compose.foundation.shape.CircleShape)
+                .size(40.dp)
+                .clip(RoundedCornerShape(14.dp))
                 .background(accent.copy(alpha = 0.14f)),
             contentAlignment = Alignment.Center
         ) {
@@ -1611,19 +1625,21 @@ private fun SettingsRow(
                 modifier = Modifier.size(18.dp)
             )
         }
-        Spacer(modifier = Modifier.width(8.dp))
+        Spacer(modifier = Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = title,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurface
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1, overflow = TextOverflow.Ellipsis
             )
             Spacer(modifier = Modifier.height(1.dp))
             Text(
                 text = subtitle,
-                fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 16.sp
             )
         }
         Icon(
@@ -1632,6 +1648,11 @@ private fun SettingsRow(
             tint = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
+}
+
+@Composable
+private fun SettingsSectionLabel(text: String) {
+    Text(text, modifier = Modifier.padding(start = 4.dp, top = 8.dp, bottom = 2.dp), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
 }
 
 /**

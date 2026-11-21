@@ -351,9 +351,13 @@ private fun CallHistoryRow(
                         tint = accentColor,
                         modifier = Modifier.size(13.dp)
                     )
+                    val sourceLabel = when {
+                        record.accountUser.equals("SIM", ignoreCase = true) || record.accountUser.startsWith("SIM ", ignoreCase = true) -> record.accountUser
+                        record.accountUser.isNotBlank() -> "SIP · ${record.accountUser}"
+                        else -> "Source unknown"
+                    }
                     Text(
-                        text = dateFormat.format(Date(record.timestamp)) +
-                            (if (record.accountUser.isNotBlank()) " • ${record.accountUser}" else ""),
+                        text = dateFormat.format(Date(record.timestamp)) + " • " + sourceLabel,
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,

@@ -65,18 +65,25 @@ object Diagnosis {
     }
 
     fun summary(rows: List<String>): String = buildString {
-        for (network in listOf("Wi-Fi", "Mobile")) {
+        val seenNetworks = rows.map { it.substringAfter(" | ").substringBefore(" | ") }.distinct()
+        val networks = listOf("Wi-Fi", "Mobile", "VPN", "Other", "Offline", "Unknown").filter { it in seenNetworks }
+        for (network in networks) {
             val observed = rows.filter { it.substringAfter(" | ").substringBefore(" | ") == network }
             val connected = observed.count { it.contains(" | Connected | ") }
             val incoming = observed.count { it.contains(" Incoming IncomingReceived;") }
             val dialed = observed.count { it.endsWith(" | Outgoing dial requested") }
             val failed = observed.count { it.contains(" | Call error | ") }
-            appendLine("$network: $dialed dial requests, $incoming incoming events, $connected connected events, $failed call errors.")
+            val registerOk = observed.count { it.contains(" | Registration | Ok;") }
+            val registerErrors = observed.count { it.contains(" | Registration error | ") }
+            appendLine("$network: $registerOk successful registrations, $registerErrors registration errors, $dialed dial requests, $incoming incoming calls observed, $connected connected calls, $failed call errors.")
             val lastCall = observed.lastOrNull { it.contains(" | Call | ") || it.contains(" | Connected | ") || it.contains(" | Call error | ") }
             if (lastCall != null) appendLine("Last call event: " + lastCall.substringAfterLast(" | "))
             observed.lastOrNull { it.contains(" | Call error | ") || it.contains(" | Registration error | ") }
                 ?.let { appendLine("Latest error: " + it.substringAfterLast(" | ")) }
+            val lastRegisterResponse = observed.lastOrNull { it.contains(" | SIP | REGISTER response ") }
+            if (lastRegisterResponse != null) appendLine("Last REGISTER response: " + lastRegisterResponse.substringAfter(" | SIP | "))
         }
-        append("Events are measured on this phone. An incoming request that never arrived needs the provider’s call trace.")
+        if (networks.isEmpty()) appendLine("No network events recorded yet.")
+        append("Events are measured on this phone. 401 is usually an authentication challenge; a following 200 confirms registration. A missing incoming request needs the provider’s call trace. Registration success does not prove call audio/media works.")
     }
 }

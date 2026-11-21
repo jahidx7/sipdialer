@@ -343,7 +343,7 @@ fun SipDialerApp(
     com.noxsip.app.ui.screens.UpdatePrompt()
     var missedSeenTs by remember { mutableLongStateOf(uiPrefs.getLong("missed_seen_ts", 0L)) }
     LaunchedEffect(currentRoute, callRecords) {
-        if (currentRoute == Screen.Dialer.route) {
+        if (currentRoute == Screen.Dialer.route || currentRoute == Screen.CallHistory.route) {
             val now = System.currentTimeMillis()
             missedSeenTs = now
             uiPrefs.edit().putLong("missed_seen_ts", now).apply()
@@ -353,6 +353,7 @@ fun SipDialerApp(
 
     val bottomNavItems = listOf(
         Triple(Screen.Dialer.route, "Keypad", Icons.Filled.Dialpad),
+        Triple(Screen.CallHistory.route, "Recent", Icons.Filled.History),
         Triple(Screen.Contacts.route, "Contacts", Icons.Filled.Contacts),
         Triple(Screen.Account.route, "Settings", Icons.Filled.Settings),
     )
@@ -403,7 +404,7 @@ fun SipDialerApp(
                     bottomNavItems.forEach { (route, label, icon) ->
                         val selected = currentRoute == route
                         val badgeCount = when (route) {
-                            Screen.Dialer.route -> if (selected) 0 else newMissed
+                            Screen.CallHistory.route -> if (selected) 0 else newMissed
                             else -> 0
                         }
                         NavigationBarItem(
@@ -557,6 +558,27 @@ fun SipDialerApp(
                 )
             }
 
+            composable(Screen.CallHistory.route) {
+                CallHistoryScreen(
+                    callRecords = callRecords,
+                    contacts = allContacts,
+                    onCallBack = { number ->
+                        dialPrefill = number
+                        navController.navigate(Screen.Dialer.route) {
+                            popUpTo(navController.graph.startDestinationId) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    },
+                    onClearHistory = {
+                        scope.launch {
+                            com.noxsip.app.util.CallLogSync.markAllCleared(context)
+                            database.callHistoryDao().deleteAllCallRecords()
+                        }
+                    }
+                )
+            }
+
             composable(Screen.Account.route) {
                 AccountSetupScreen(
                     currentAccount = currentAccount,
@@ -666,21 +688,21 @@ fun SipDialerApp(
                         restoreState = true
                     }
                 }
-                .padding(horizontal = 4.dp, vertical = 0.dp),
+                .padding(horizontal = 9.dp, vertical = 5.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             Box(
                 modifier = Modifier
-                    .size(4.dp)
+                    .size(7.dp)
                     .clip(CircleShape)
                     .background(pillColor)
             )
             Text(
                 text = pillLabel,
                 color = MaterialTheme.colorScheme.onSurface,
-                lineHeight = 10.sp,
-                fontSize = 8.sp,
+                lineHeight = 14.sp,
+                fontSize = 11.sp,
                 fontWeight = FontWeight.SemiBold
             )
         }
