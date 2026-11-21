@@ -355,6 +355,7 @@ fun SipDialerApp(
     val bottomNavItems = listOf(
         Triple(Screen.Dialer.route, "Keypad", Icons.Filled.Dialpad),
         Triple(Screen.Contacts.route, "Contacts", Icons.Filled.Contacts),
+        Triple(Screen.PushToTalk.route, "PTT", Icons.Filled.Mic),
         Triple(Screen.Account.route, "Settings", Icons.Filled.Settings),
     )
 
@@ -559,6 +560,10 @@ fun SipDialerApp(
                     pendingAdd = pendingAdd,
                     onPendingConsumed = { pendingAdd = null }
                 )
+            }
+
+            composable(Screen.PushToTalk.route) {
+                PushToTalkScreen()
             }
 
             composable(Screen.CallHistory.route) {
